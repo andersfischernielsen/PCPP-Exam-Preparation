@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class SortingPipeline {
   public static void main(String[] args) {
     SystemInfo();
-    final int count = 8, P = 2;
+    final int count = 40, P = 4;
     final double[] arr = DoubleArray.randomPermutation(count);
     BlockingDoubleQueue[] queues = new BlockingDoubleQueue[P + 1];
     for (int i = 0; i < queues.length; i++) {
@@ -48,7 +48,9 @@ public class SortingPipeline {
     // System.out.println(ss2.output);
     // SortedChecker sc = new SortedChecker(8, ss2.output);
     // sc.run();
-    int S = 4;
+
+    // messy code, but works.
+    int S = arr.length / P;
     Thread[] threads = new Thread[P + 2];
     SortingStage[] sortingStages = new SortingStage[P + 2];
     DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new WrappedArrayDoubleQueue());
@@ -59,7 +61,7 @@ public class SortingPipeline {
         SortingStage ss = new SortingStage(arr.length + (P - i) * S, dg.output, S);
         sortingStages[i] = ss;
         threads[i] = new Thread(ss);
-      } else if (i == threads.length) { // The sorted checker
+      } else if (i == threads.length - 1) { // The sorted checker
         threads[i] = new Thread(new SortedChecker(arr.length, sortingStages[i - 1].output));
       } else { // all stages between first and last
         SortingStage ss = new SortingStage(arr.length + (P - i) * S, sortingStages[i - 1].output, S);
@@ -68,10 +70,6 @@ public class SortingPipeline {
       }
     }
 
-    // threads[0] = new Thread(dg); // DG
-    // threads[1] = new Thread(ss1);
-    // threads[2] = new Thread(ss2);
-    // threads[3] = new Thread(sc);
     for (int i = 0; i < threads.length; i++) {
       threads[i].start();
     }

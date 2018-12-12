@@ -111,5 +111,118 @@ The `DoubleArrayList` can be made thread-safe by locking on the local variable i
 
 ## Question 4
 
+#### 4.1
+SortingStage: 
+```java
+static class SortingStage implements Runnable {
+  // TO DO: field declarations, constructor, and so on
+  BlockingDoubleQueue input, output;
+  int itemCount, heapSize;
+  double[] heap;
+
+  public SortingStage(int itemCount, BlockingDoubleQueue input, int s) {
+    this.input = input;
+    this.output = new WrappedArrayDoubleQueue();
+    this.itemCount = itemCount;
+    this.heap = new double[s];
+    this.heapSize = 0;
+  }
+
+  public void run() {
+    while (itemCount > 0) {
+      double x = input.take();
+      if (heapSize < heap.length) {
+        heap[heapSize++] = x;
+        DoubleArray.minheapSiftup(heap, heapSize - 1, heapSize - 1);
+      } else if (x <= heap[0]) {
+        output.put(x);
+        itemCount--;
+      } else {
+        double least = heap[0];
+        heap[0] = x;
+        DoubleArray.minheapSiftdown(heap, 0, heapSize - 1);
+        output.put(least);
+        itemCount--;
+      }
+    }
+  }
+}
+```
+
+### 4.2 
+sortPipeline
+```java
+private static void sortPipeline(double[] arr, int P, BlockingDoubleQueue[] queues) {
+  int S = arr.length / P;
+  Thread[] threads = new Thread[P + 2];
+  SortingStage[] sortingStages = new SortingStage[P + 2];
+  DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new WrappedArrayDoubleQueue());
+  for (int i = 0; i < threads.length; i++) {
+    if (i == 0)
+      threads[i] = new Thread(dg); // initial double generator
+    else if (i == 1) {
+      SortingStage ss = new SortingStage(arr.length + (P - i) * S, dg.output, S);
+      sortingStages[i] = ss;
+      threads[i] = new Thread(ss);
+    } else if (i == threads.length - 1) { // The sorted checker
+      threads[i] = new Thread(new SortedChecker(arr.length, sortingStages[i - 1].output));
+    } else { // all stages between first and last
+      SortingStage ss = new SortingStage(arr.length + (P - i) * S, sortingStages[i - 1].output, S);
+      sortingStages[i] = ss;
+      threads[i] = new Thread(ss);
+    }
+  }
+
+  for (int i = 0; i < threads.length; i++) {
+    threads[i].start();
+  }
+  try {
+    for (int i = 0; i < threads.length; i++) {
+      threads[i].join();
+    }
+  } catch (InterruptedException e) {
+  }
+}
+```
+
+## Question 5 
+
+### 5.1
+WrappedArrayDoubleQueue
+```java
+class WrappedArrayDoubleQueue implements BlockingDoubleQueue {
+  ArrayBlockingQueue arrayBlockingQueue;
+
+  public WrappedArrayDoubleQueue() {
+    this.arrayBlockingQueue = new ArrayBlockingQueue<Double>(50);
+  }
+
+  public double take() {
+    try {
+      return (double) arrayBlockingQueue.take();
+    } catch (InterruptedException e) {
+      return -1.0;
+    }
+  }
+
+  public void put(double item) {
+    try {
+      arrayBlockingQueue.put(item);
+    } catch (InterruptedException e) {
+    }
+  }
+}
+```
+### 5.2
+```
+# OS:   Mac OS X; 10.14.1; x86_64
+# JVM:  Oracle Corporation; 1.8.0_151
+# CPU:  null; 4 "cores"
+# Date: 2018-12-12T21:34:45+0100
+0.1 1.1 2.1 3.1 4.1 5.1 6.1 7.1 8.1 9.1 10.1 11.1 12.1 13.1 14.1 15.1 16.1 17.1 18.1 19.1 20.1 21.1 22.1 23.1 24.1 25.1 26.1 27.1 28.1 29.1 30.1 31.1 32.1 33.1 34.1 35.1 36.1 37.1 38.1 39.1
+```
+
+
+
 ## Question 11
 
