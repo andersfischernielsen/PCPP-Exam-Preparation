@@ -1,12 +1,19 @@
 public class TestLocking1 {
   public static void main(String[] args) {
     DoubleArrayList dal1 = new DoubleArrayList();
-    dal1.add(42.1); dal1.add(7.2); dal1.add(9.3); dal1.add(13.4); 
+    dal1.add(42.1);
+    dal1.add(7.2);
+    dal1.add(9.3);
+    dal1.add(13.4);
     dal1.set(2, 11.3);
-    for (int i=0; i<dal1.size(); i++)
+    for (int i = 0; i < dal1.size(); i++)
       System.out.println(dal1.get(i));
     DoubleArrayList dal2 = new DoubleArrayList();
-    dal2.add(90.1); dal2.add(80.2); dal2.add(70.3); dal2.add(60.4); dal2.add(50.5); 
+    dal2.add(90.1);
+    dal2.add(80.2);
+    dal2.add(70.3);
+    dal2.add(60.4);
+    dal2.add(50.5);
     DoubleArrayList dal3 = new DoubleArrayList();
   }
 }
@@ -25,9 +32,9 @@ class DoubleArrayList {
 
   // Return item number i, if any
   public double get(int i) {
-    if (0 <= i && i < size) 
+    if (0 <= i && i < size)
       return items[i];
-    else 
+    else
       throw new IndexOutOfBoundsException(String.valueOf(i));
   }
 
@@ -35,8 +42,8 @@ class DoubleArrayList {
   public boolean add(double x) {
     if (size == items.length) {
       double[] newItems = new double[items.length * 2];
-      for (int i=0; i<items.length; i++)
-	newItems[i] = items[i];
+      for (int i = 0; i < items.length; i++)
+        newItems[i] = items[i];
       items = newItems;
     }
     items[size] = x;
@@ -50,14 +57,14 @@ class DoubleArrayList {
       double old = items[i];
       items[i] = x;
       return old;
-    } else 
+    } else
       throw new IndexOutOfBoundsException(String.valueOf(i));
   }
 
   // The double list formatted as eg "[3.2, 4.7]"
   public String toString() {
     StringBuilder sb = new StringBuilder("[");
-    for (int i=0; i<size; i++)
+    for (int i = 0; i < size; i++)
       sb.append(i > 0 ? ", " : "").append(items[i]);
     return sb.append("]").toString();
   }
