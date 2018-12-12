@@ -1,22 +1,43 @@
+import java.util.HashSet;
+import java.util.concurrent.atomic.AtomicInteger;
+
 public class TestLocking2 {
   public static void main(String[] args) {
-    DoubleArrayList dal1 = new DoubleArrayList();
-    dal1.add(42.1);
-    dal1.add(7.2);
-    dal1.add(9.3);
-    dal1.add(13.4);
-    dal1.set(2, 11.3);
-    for (int i = 0; i < dal1.size(); i++)
-      System.out.println(dal1.get(i));
-    DoubleArrayList dal2 = new DoubleArrayList();
-    dal2.add(90.1);
-    dal2.add(80.2);
-    dal2.add(70.3);
-    dal2.add(60.4);
-    dal2.add(50.5);
-    DoubleArrayList dal3 = new DoubleArrayList();
+    int count = 1_000;
+    // DoubleArrayList dal1 = new DoubleArrayList();
+    // DoubleArrayList dal2 = new DoubleArrayList();
+    // DoubleArrayList dal3 = new DoubleArrayList();
+    Thread t1 = new Thread(() -> {
+      for (int i = 1; i <= count; i++) {
+        DoubleArrayList dal = new DoubleArrayList();
+        dal.add(i);
+      }
+    });
+    Thread t2 = new Thread(() -> {
+      for (int i = 1; i <= count; i++) {
+        DoubleArrayList dal = new DoubleArrayList();
+        dal.add(i);
+
+      }
+    });
+    t1.start();
+    t2.start();
+    try {
+      t1.join();
+      t2.join();
+    } catch (InterruptedException exn) {
+    }
     System.out.printf("Total size = %d%n", DoubleArrayList.totalSize());
-    System.out.printf("All lists  = %s%n", DoubleArrayList.allLists());
+    System.out.printf("All lists = %s%n", DoubleArrayList.allLists());
+    System.out.printf("All lists size= %s%n", DoubleArrayList.allLists().size());
+
+    int sum = 0;
+    for (DoubleArrayList list : DoubleArrayList.allLists()) {
+      sum += list.get(0);
+    }
+
+    System.out.printf("Sum of all lists = %s%n", sum); // should be (1000^2+1000)/2 = 500.500 * 2 = 1.001.000
+
   }
 }
 
@@ -24,7 +45,7 @@ public class TestLocking2 {
 // array lists and their total element count.
 
 class DoubleArrayList {
-  private static int totalSize = 0;
+  private static AtomicInteger totalSize = new AtomicInteger();
   private static HashSet<DoubleArrayList> allLists = new HashSet<>();
 
   // Invariant: 0 <= size <= items.length
@@ -32,7 +53,9 @@ class DoubleArrayList {
   private int size = 0;
 
   public DoubleArrayList() {
-    allLists.add(this);
+    synchronized (allLists) {
+      allLists.add(this);
+    }
   }
 
   // Number of items in the double list
@@ -58,7 +81,7 @@ class DoubleArrayList {
     }
     items[size] = x;
     size++;
-    totalSize++;
+    totalSize.getAndIncrement();
     return true;
   }
 
@@ -81,7 +104,7 @@ class DoubleArrayList {
   }
 
   public static int totalSize() {
-    return totalSize;
+    return totalSize.get();
   }
 
   public static HashSet<DoubleArrayList> allLists() {

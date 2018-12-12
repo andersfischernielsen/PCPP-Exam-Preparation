@@ -72,3 +72,44 @@ Visibility is broken in this implementation since it is possible for one thread 
 ### 2.4
 
 Using striping where we lock $n$ sections of the inner array on all operations would give us better performance and guarantee visibility.
+
+## Question 3
+
+### 3.1
+By using an AtomicInteger and calling it's getAndIncrement method, we can ensure that totalSize is maintained correctly.
+
+### 3.2 
+The `DoubleArrayList` can be made thread-safe by locking on the local variable inside the class in the constructor, like so:
+
+```java
+  class DoubleArrayList {
+  private static AtomicInteger totalSize = new AtomicInteger();
+  
+  [...]
+
+  public DoubleArrayList() {
+    synchronized (allLists) {
+      allLists.add(this);
+    }
+  }
+
+  [...] 
+
+  public boolean add(double x) {
+    [...]
+    size++;
+    totalSize.getAndIncrement();
+    return true;
+  }
+
+  [...] 
+
+  public static int totalSize() {
+    return totalSize.get();
+  }
+```
+
+## Question 4
+
+## Question 11
+
