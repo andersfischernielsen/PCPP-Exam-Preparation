@@ -24,23 +24,96 @@ import java.util.concurrent.atomic.AtomicReference;
 public class SortingPipeline {
   public static void main(String[] args) {
     SystemInfo();
-    final int count = 100_000, P = 4;
+    // final int count = 100_000, P = 4;
+    final int count = 8, P = 4;
+
     final double[] arr = DoubleArray.randomPermutation(count);
 
     // TO DO: Create and run pipeline to sort numbers from arr
+    BlockingDoubleQueue[] queues = new BlockingDoubleQueue[P+1];
+    for (int i = 0; i < queues.length; i++) {
+      queues[i] = new WrappedArrayDoubleQueue();
+    }
+
+    sortPipeline(arr, P, queues);
   }
 
   private static void sortPipeline(double[] arr, int P, BlockingDoubleQueue[] queues) {
-    // TO DO
-  }
+    
+    //Set up doublegenerator and connect it to first queue
+    int infinites = arr.length;
+    DoubleGenerator dg = new DoubleGenerator(arr, infinites, queues[0]);    
+    
+    //Create P sortingstages and connect queues
+    SortingStage[] sortingStages = new SortingStage[P];
+    for (int i = 0; i < queues.length-1; i++) {      
+      int size = arr.length/P;
+      int itemCount = arr.length + (P-(i+1))*size;
+      sortingStages[i] = new SortingStage(queues[i], queues[i+1], size, itemCount);          
+    }
+
+    //Set up SortedChecker and connect it
+    BlockingDoubleQueue inputQueueSc = queues[queues.length-1];
+    int scItemCount = arr.length;
+    SortedChecker sc = new SortedChecker(scItemCount, inputQueueSc);
+
+    dg.run();    
+
+
+    
+    sortingStages[0].run();
+    sortingStages[1].run();
+    sortingStages[2].run();
+    sortingStages[3].run();
+    
+    
+    
+
+
+    sc.run();
+    
+  }  
 
   static class SortingStage implements Runnable {
+    BlockingDoubleQueue inputQueue;
+    BlockingDoubleQueue outputQueue;
+
+    double[] heap;
+
+    int heapSize; //No. of elements currently stored in the heap
+    int itemCount; //No of elements to be produced as output before it terminates
+
+    public SortingStage(BlockingDoubleQueue inputQueue, BlockingDoubleQueue outputQueue, int size, int itemCount){
+      heap = new double[size]; 
+      this.inputQueue = inputQueue;
+      this.outputQueue = outputQueue;            
+      this.itemCount = itemCount;//Change this to whatever itemCount/Boundary needed.
+      heapSize = 0;
+    }
     // TO DO: field declarations, constructor, and so on 
     
     public void run() { 
-      // TO DO 
+      while (itemCount > 0) { //Dies at itemcount = 2, all in inputQueue is null at that point
+        double x = inputQueue.take(); //... get next number from input ...
+        if (heapSize < heap.length) { // heap not full, put x into it
+        heap[heapSize++] = x;
+        DoubleArray.minheapSiftup(heap, heapSize-1, heapSize-1);
+        } else if (x <= heap[0]) { //x is less equal to smallest number, forward x to next stage
+          //output x
+          outputQueue.put(x);
+          itemCount--;
+        } else {    //x is bigger than least number forward least, replace with x
+          double least = heap[0];
+          heap[0] = x;
+          DoubleArray.minheapSiftdown(heap, 0, heapSize-1);
+          outputQueue.put(least);
+          itemCount--;
+        }
+      }
     }
   }
+      
+          
 
   static class DoubleGenerator implements Runnable {
     private final BlockingDoubleQueue output;
@@ -63,7 +136,9 @@ public class SortingPipeline {
 
   static class SortedChecker implements Runnable {
     // If DEBUG is true, print the first 100 numbers received
-    private final static boolean DEBUG = false;
+    // private final static boolean DEBUG = false;
+    private final static boolean DEBUG = true;
+
     private final BlockingDoubleQueue input;
     private final int itemCount; // the number of items to check
 
@@ -154,6 +229,31 @@ interface BlockingDoubleQueue {
 // The queue implementations
 
 // TO DO
+class WrappedArrayDoubleQueue implements BlockingDoubleQueue {
+
+  ArrayBlockingQueue<Double> arrayBlockingQueue;
+
+  public WrappedArrayDoubleQueue(){
+    this.arrayBlockingQueue = new ArrayBlockingQueue<>(50);
+  }
+
+  public double take() {
+    try {
+      return arrayBlockingQueue.take();        
+    } catch (Exception e) {
+      return -1;
+    }
+  }
+
+
+  public void put(double item) {
+    try {
+      arrayBlockingQueue.put((item));        
+    } catch (Exception e) {
+      //TODO: handle exception
+    }
+  }
+}
 
 // ----------------------------------------------------------------------
 
