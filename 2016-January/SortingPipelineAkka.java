@@ -20,7 +20,7 @@ class SortingPipelineAkka {
         
         var l1 = new ArrayList<>(Arrays.asList(4.0,7.0,2.0,8.0,6.0,1.0,5.0,3.0));
         var l2 = new ArrayList<>(Arrays.asList(9.0,9.0,9.0,9.0,9.0,9.0,9.0,9.0));
-        
+
         transmit(l1, first);
         transmit(l2, first);
     }
@@ -71,7 +71,6 @@ class EchoActor extends UntypedActor {
 class InitMessage implements Serializable {
     private static final long serialVersionUID = 1L;
     private ActorRef out;
-
     public InitMessage(ActorRef out) { this.out = out; }
     public ActorRef getOut() { return this.out; }
 }
@@ -82,5 +81,5 @@ class NumMessage implements Serializable {
     public double getNumber() { return this.number; }
 }
 class TransmitMessage implements Serializable {
-
-    private static final long serialVersionUID = 1L;}
+    private static final long serialVersionUID = 1L;
+}
