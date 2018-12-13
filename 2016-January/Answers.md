@@ -227,6 +227,79 @@ sortPipeLine                        179,0 ms      21,59          2
 ```
 **DISCUSS THE RESULTS?**
 
+## Question 6
+
+### 6.1
+```java
+lass BlockingNDoubleQueue implements BlockingDoubleQueue {
+  double[] items;
+  int head, tail, currentSize;
+
+  BlockingNDoubleQueue() {
+    this.items = new double[50];
+    this.head = 0;
+    this.tail = 0;
+    this.currentSize = 0;
+  }
+
+  public double take() {
+    synchronized (this) {
+      while (currentSize == 0) {
+        try {
+          this.wait();
+        } catch (InterruptedException e) {
+        }
+      }
+      double item = items[head];
+      if (head < 50 - 1)
+        head++;
+      currentSize--;
+      this.notifyAll();
+      return item;
+    }
+  }
+
+  public void put(double item) {
+    synchronized (this) {
+      while (currentSize == 49) {
+        try {
+          this.wait();
+        } catch (InterruptedException e) {
+        }
+      }
+      reallocate();
+      items[tail] = item;
+      if (tail < 50 - 1)
+        tail++;
+      currentSize++;
+      this.notifyAll();
+    }
+  }
+
+  private void reallocate() {
+    if (tail == items.length - 1) {
+      for (int h = head, i = 0; h < items.length; h++, i++) {
+        items[i] = items[h];
+      }
+      tail -= head; // Update tail.
+      head = 0; // Update head.
+    }
+  }
+```
+
+### 6.2
+It's thread safe because both the `put` and the `take` methods are synchronized on the object. This means that every time either of these two methods are invoked, only one thread can work at a time. Note that `reallocate` doesn't have to be synchronized since it's invoked within `put` inside a synchronized block. 
+
+### 6.3
+```
+# OS:   Mac OS X; 10.14.1; x86_64
+# JVM:  Oracle Corporation; 1.8.0_151
+# CPU:  null; 4 "cores"
+# Date: 2018-12-13T14:35:12+0100
+sortPipeLine                        711,7 ms      85,39          2
+```
+**Discuss the results?!**
+
 
 
 ## Question 11

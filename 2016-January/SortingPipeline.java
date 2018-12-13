@@ -28,14 +28,32 @@ public class SortingPipeline {
     final double[] arr = DoubleArray.randomPermutation(count);
     BlockingDoubleQueue[] queues = new BlockingDoubleQueue[P + 1];
     for (int i = 0; i < queues.length; i++) {
-      queues[i] = new WrappedArrayDoubleQueue();
+      // queues[i] = new WrappedArrayDoubleQueue();
+      queues[i] = new BlockingNDoubleQueue();
     }
-    Mark7("sortPipeLine", i -> sortPipeline(arr, P, queues)); // I'm in doubt wether this the correct way to do it.
-    // TO DO: Create and run pipeline to sort numbers from arr
+    Mark7("sortPipeLine", i -> sortPipeline(arr, P, queues)); // I'm in doubt
+    // wether this the correct way to do it.
+    // sortPipeline(arr, P, queues);
   }
 
   private static double sortPipeline(double[] arr, int P, BlockingDoubleQueue[] queues) {
-    // THIS WORKS SEQUENTIALLY!
+    // test with DoubleNQueue
+    // DoubleGenerator dg = new DoubleGenerator(arr, 8, new BlockingNDoubleQueue());
+    // dg.run();
+    // BlockingNDoubleQueue q1 = (BlockingNDoubleQueue) dg.output;
+    // q1.printQueue();
+    // SortingStage ss1 = new SortingStage(12, q1, 4);
+    // ss1.run();
+    // BlockingNDoubleQueue q2 = (BlockingNDoubleQueue) ss1.output;
+    // q2.printQueue();
+    // SortingStage ss2 = new SortingStage(8, q2, 4);
+    // ss2.run();
+    // BlockingNDoubleQueue q3 = (BlockingNDoubleQueue) ss2.output;
+    // q3.printQueue();
+    // SortedChecker sc = new SortedChecker(8, q3);
+    // sc.run();
+
+    // THIS WORKS SEQUENTIALLY! 8 elements, 2 sorting stages, 3 queues.
     // DoubleGenerator dg = new DoubleGenerator(arr, 8, new
     // WrappedArrayDoubleQueue());
     // dg.run();
@@ -53,7 +71,9 @@ public class SortingPipeline {
     int S = arr.length / P;
     Thread[] threads = new Thread[P + 2];
     SortingStage[] sortingStages = new SortingStage[P + 2];
-    DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new WrappedArrayDoubleQueue());
+    // DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new
+    // WrappedArrayDoubleQueue());
+    DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new BlockingNDoubleQueue());
     for (int i = 0; i < threads.length; i++) {
       if (i == 0)
         threads[i] = new Thread(dg); // initial double generator
@@ -90,7 +110,8 @@ public class SortingPipeline {
 
     public SortingStage(int itemCount, BlockingDoubleQueue input, int s) {
       this.input = input;
-      this.output = new WrappedArrayDoubleQueue();
+      // this.output = new WrappedArrayDoubleQueue();
+      this.output = new BlockingNDoubleQueue();
       this.itemCount = itemCount;
       this.heap = new double[s];
       this.heapSize = 0;
@@ -230,6 +251,70 @@ interface BlockingDoubleQueue {
   double take();
 
   void put(double item);
+}
+
+class BlockingNDoubleQueue implements BlockingDoubleQueue {
+  double[] items;
+  int head, tail, currentSize;
+
+  BlockingNDoubleQueue() {
+    this.items = new double[50];
+    this.head = 0;
+    this.tail = 0;
+    this.currentSize = 0;
+  }
+
+  public double take() {
+    synchronized (this) {
+      while (currentSize == 0) {
+        try {
+          this.wait();
+        } catch (InterruptedException e) {
+        }
+      }
+      double item = items[head];
+      if (head < 50 - 1)
+        head++;
+      currentSize--;
+      this.notifyAll();
+      return item;
+    }
+  }
+
+  public void put(double item) {
+    synchronized (this) {
+      while (currentSize == 49) {
+        try {
+          this.wait();
+        } catch (InterruptedException e) {
+        }
+      }
+      reallocate();
+      items[tail] = item;
+      if (tail < 50 - 1)
+        tail++;
+      currentSize++;
+      this.notifyAll();
+    }
+  }
+
+  private void reallocate() {
+    if (tail == items.length - 1) {
+      for (int h = head, i = 0; h < items.length; h++, i++) {
+        items[i] = items[h];
+      }
+      tail -= head; // Update tail.
+      head = 0; // Update head.
+    }
+  }
+
+  public void printQueue() {
+    System.out.println("Head: " + head + " Tail: " + tail + " Elements: ");
+    for (int i = 0; i < items.length; i++) {
+      System.out.print(items[i] + ", ");
+    }
+    System.out.println("\n");
+  }
 }
 
 class WrappedArrayDoubleQueue implements BlockingDoubleQueue {
