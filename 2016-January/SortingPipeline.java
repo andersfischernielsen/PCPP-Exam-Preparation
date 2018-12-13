@@ -24,13 +24,15 @@ import java.util.concurrent.atomic.AtomicReference;
 public class SortingPipeline {
   public static void main(String[] args) {
     SystemInfo();
-    final int count = 100_000, P = 4;
+    // final int count = 100_000, P = 4;
+    final int count = 8, P = 2;
     final double[] arr = DoubleArray.randomPermutation(count);
     BlockingDoubleQueue[] queues = new BlockingDoubleQueue[P + 1];
     for (int i = 0; i < queues.length; i++) {
       // queues[i] = new WrappedArrayDoubleQueue();
       // queues[i] = new BlockingNDoubleQueue();
-      queues[i] = new UnboundedBlockingQueue();
+      // queues[i] = new UnboundedBlockingQueue();
+      queues[i] = new NolockNDoubleQueue();
     }
     Mark7("sortPipeLine", i -> sortPipeline(arr, P, queues)); // I'm in doubt
     // wether this the correct way to do it.
@@ -74,7 +76,7 @@ public class SortingPipeline {
     SortingStage[] sortingStages = new SortingStage[P + 2];
     // DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new
     // WrappedArrayDoubleQueue());
-    DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new UnboundedBlockingQueue());
+    DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new NolockNDoubleQueue());
     for (int i = 0; i < threads.length; i++) {
       if (i == 0)
         threads[i] = new Thread(dg); // initial double generator
@@ -112,7 +114,9 @@ public class SortingPipeline {
     public SortingStage(int itemCount, BlockingDoubleQueue input, int s) {
       this.input = input;
       // this.output = new WrappedArrayDoubleQueue();
-      this.output = new UnboundedBlockingQueue();
+      // this.output = new BlockingNDoubleQueue();
+      // this.output = new UnboundedBlockingQueue();
+      this.output = new NolockNDoubleQueue();
       this.itemCount = itemCount;
       this.heap = new double[s];
       this.heapSize = 0;
@@ -253,6 +257,57 @@ interface BlockingDoubleQueue {
 
   void put(double item);
 }
+
+class NolockNDoubleQueue implements BlockingDoubleQueue {
+  volatile int head, tail;
+  final double[] items;
+
+  public NolockNDoubleQueue() {
+    this.head = 0;
+    this.tail = 0;
+    this.items = new double[50];
+  }
+
+  public void put(double item) {
+    // use CAS? - No the assignment is to use a while loop. Why doesn't this work?
+    while (tail - head == items.length) {
+    }
+    items[tail % items.length] = item;
+    tail++;
+  }
+
+  public double take() {
+    while (tail - head == 0) {
+    }
+    double out = items[head % items.length];
+    head++;
+    return out;
+  }
+}
+
+// class WaitFreeQueue<T> {
+// volatile int head = 0, tail = 0;
+// T[] items;
+
+// public WaitFreeQueue(int capacity) {
+// items = (T[]) new Object[capacity];
+// }
+
+// public void enq(T x) throws FullException {
+// if (tail - head == items.length)
+// throw new FullException();
+// items[tail % items.length] = x;
+// tail++;
+// }
+
+// public T deq() throws EmptyException {
+// if (tail - head == 0)
+// throw new EmptyException();
+// T x = items[head % items.length];
+// head++;
+// return x;
+// }
+// }
 
 class UnboundedBlockingQueue implements BlockingDoubleQueue {
   private static class Node {
