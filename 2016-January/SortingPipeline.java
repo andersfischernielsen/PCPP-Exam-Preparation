@@ -24,8 +24,8 @@ import java.util.concurrent.atomic.AtomicReference;
 public class SortingPipeline {
   public static void main(String[] args) {
     SystemInfo();
-    // final int count = 100_000, P = 4;
-    final int count = 8, P = 4;
+    final int count = 100_000, P = 4;
+    // final int count = 8, P = 4;
 
     final double[] arr = DoubleArray.randomPermutation(count);
 
@@ -39,39 +39,60 @@ public class SortingPipeline {
   }
 
   private static void sortPipeline(double[] arr, int P, BlockingDoubleQueue[] queues) {
+    //Sequential implementation
     
-    //Set up doublegenerator and connect it to first queue
-    int infinites = arr.length;
-    DoubleGenerator dg = new DoubleGenerator(arr, infinites, queues[0]);    
+    // //Set up doublegenerator and connect it to first queue
+    // int infinites = arr.length;
     
-    //Create P sortingstages and connect queues
-    SortingStage[] sortingStages = new SortingStage[P];
-    for (int i = 0; i < queues.length-1; i++) {      
-      int size = arr.length/P;
-      int itemCount = arr.length + (P-(i+1))*size;
-      sortingStages[i] = new SortingStage(queues[i], queues[i+1], size, itemCount);          
+    // Thread t1 = new 
+    // DoubleGenerator dg = new DoubleGenerator(arr, infinites, queues[0]);    
+    
+    // dg.run();    
+
+    // //Create P sortingstages and connect queues
+    // SortingStage[] sortingStages = new SortingStage[P];
+    // for (int i = 0; i < queues.length-1; i++) {      
+    //   int size = arr.length/P;
+    //   int itemCount = arr.length + (P-(i+1))*size;
+    //   sortingStages[i] = new SortingStage(queues[i], queues[i+1], size, itemCount);       
+    //   sortingStages[i].run();   
+    // }
+
+    // //Set up SortedChecker and connect it
+    // BlockingDoubleQueue inputQueueSc = queues[queues.length-1];
+    // int scItemCount = arr.length;
+    // SortedChecker sc = new SortedChecker(scItemCount, inputQueueSc);
+    // sc.run();
+
+    Thread[] threads = new Thread[P+2];
+    for (int i = 0; i < threads.length; i++) {
+      if(i == 0){ //Create DoubleGenerator, set output queue to first queue
+        Runnable dg = new DoubleGenerator(arr, arr.length, queues[0]);
+        threads[0] = new Thread(dg); 
+      }
+      else if(i < threads.length-1){ //for all but the last thread, create a sorting stage and set it's input queue to the queue before it and output to current index
+        int size = arr.length/P;
+        // int itemCount = arr.length + (P-(i+1))*size;
+        int itemCount = arr.length + (P-(i))*size;
+        Runnable ss = new SortingStage(queues[i-1], queues[i], arr.length/P, itemCount);
+        threads[i] = new Thread(ss);        
+      }
+      else{ //This is the last thread. Create a SortedChecker, and set it's input queue to the last index in queues
+        Runnable sc = new SortedChecker(arr.length, queues[queues.length-1]); 
+        threads[i] = new Thread(sc);
+      }
     }
 
-    //Set up SortedChecker and connect it
-    BlockingDoubleQueue inputQueueSc = queues[queues.length-1];
-    int scItemCount = arr.length;
-    SortedChecker sc = new SortedChecker(scItemCount, inputQueueSc);
+    for (int i = 0; i < threads.length; i++) {
+      threads[i].start();
+    }
 
-    dg.run();    
-
-
-    
-    sortingStages[0].run();
-    sortingStages[1].run();
-    sortingStages[2].run();
-    sortingStages[3].run();
-    
-    
-    
-
-
-    sc.run();
-    
+    for (int i = 0; i < threads.length; i++) {
+      try {
+        threads[i].join();
+      } catch (Exception e) {        
+      }
+    }
   }  
 
   static class SortingStage implements Runnable {
