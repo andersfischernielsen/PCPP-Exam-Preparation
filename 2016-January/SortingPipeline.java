@@ -29,7 +29,8 @@ public class SortingPipeline {
     BlockingDoubleQueue[] queues = new BlockingDoubleQueue[P + 1];
     for (int i = 0; i < queues.length; i++) {
       // queues[i] = new WrappedArrayDoubleQueue();
-      queues[i] = new BlockingNDoubleQueue();
+      // queues[i] = new BlockingNDoubleQueue();
+      queues[i] = new UnboundedBlockingQueue();
     }
     Mark7("sortPipeLine", i -> sortPipeline(arr, P, queues)); // I'm in doubt
     // wether this the correct way to do it.
@@ -73,7 +74,7 @@ public class SortingPipeline {
     SortingStage[] sortingStages = new SortingStage[P + 2];
     // DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new
     // WrappedArrayDoubleQueue());
-    DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new BlockingNDoubleQueue());
+    DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new UnboundedBlockingQueue());
     for (int i = 0; i < threads.length; i++) {
       if (i == 0)
         threads[i] = new Thread(dg); // initial double generator
@@ -111,7 +112,7 @@ public class SortingPipeline {
     public SortingStage(int itemCount, BlockingDoubleQueue input, int s) {
       this.input = input;
       // this.output = new WrappedArrayDoubleQueue();
-      this.output = new BlockingNDoubleQueue();
+      this.output = new UnboundedBlockingQueue();
       this.itemCount = itemCount;
       this.heap = new double[s];
       this.heapSize = 0;
@@ -251,6 +252,47 @@ interface BlockingDoubleQueue {
   double take();
 
   void put(double item);
+}
+
+class UnboundedBlockingQueue implements BlockingDoubleQueue {
+  private static class Node {
+    final double item;
+    Node next;
+
+    public Node(double item, Node next) {
+      this.item = item;
+      this.next = next;
+    }
+  }
+
+  private Node head, tail;
+
+  public UnboundedBlockingQueue() {
+    head = tail = new Node(0, null);
+  }
+
+  public void put(double item) { // at tail
+    synchronized (this) {
+      Node node = new Node(item, null);
+      tail.next = node;
+      tail = node;
+      this.notifyAll();
+    }
+  }
+
+  public double take() { // from head
+    synchronized (this) {
+      while (head.next == null) {
+        try {
+          this.wait();
+        } catch (InterruptedException e) {
+        }
+      }
+      Node first = head;
+      head = first.next;
+      return head.item;
+    }
+  }
 }
 
 class BlockingNDoubleQueue implements BlockingDoubleQueue {

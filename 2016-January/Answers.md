@@ -300,7 +300,64 @@ sortPipeLine                        711,7 ms      85,39          2
 ```
 **Discuss the results?!**
 
+## Question 7
 
+### 7.1
+```java
+class UnboundedBlockingQueue implements BlockingDoubleQueue {
+  private static class Node {
+    final double item;
+    Node next;
+
+    public Node(double item, Node next) {
+      this.item = item;
+      this.next = next;
+    }
+  }
+
+  private Node head, tail;
+
+  public UnboundedBlockingQueue() {
+    head = tail = new Node(0, null);
+  }
+
+  public void put(double item) { // at tail
+    synchronized (this) {
+      Node node = new Node(item, null);
+      tail.next = node;
+      tail = node;
+      this.notifyAll();
+    }
+  }
+
+  public double take() { // from head
+    synchronized (this) {
+      while (head.next == null) {
+        try {
+          this.wait();
+        } catch (InterruptedException e) {
+        }
+      }
+      Node first = head;
+      head = first.next;
+      return head.item;
+    }
+  }
+}
+```
+
+### 7.2
+It's thread safe because both the `put` and the `take` methods are synchronized on the object. This means that every time either of these two methods are invoked, only one thread can work at a time. Furthermore `take` is blocking when the queue is empty, and thus `put` needs to notify when a new item is added.
+
+### 7.3
+```
+# OS:   Mac OS X; 10.14.1; x86_64
+# JVM:  Oracle Corporation; 1.8.0_151
+# CPU:  null; 4 "cores"
+# Date: 2018-12-13T15:30:42+0100
+sortPipeLine                        230,9 ms      15,62          2
+```
+**DISCUSS THE RESULT**
 
 ## Question 11
 
