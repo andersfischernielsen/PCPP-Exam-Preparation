@@ -359,5 +359,80 @@ sortPipeLine                        230,9 ms      15,62          2
 ```
 **DISCUSS THE RESULT**
 
+## Question 8
+
+### it doesn't work
+
+## Question 9
+
+### 9.1
+```java
+class MSUnboundedDoubleQueue implements BlockingDoubleQueue {
+  private final AtomicReference<Node> head, tail;
+
+  public MSUnboundedDoubleQueue() {
+    Node dummy = new Node(0, null);
+    head = new AtomicReference<Node>(dummy);
+    tail = new AtomicReference<Node>(dummy);
+  }
+
+  public void put(double item) { // at tail
+    Node node = new Node(item, null);
+    Node last = tail.get(), next = last.next.get();
+    // if (last == tail.get()) { // E7
+    if (next == null) {
+      // In quiescent state, try inserting new node
+      if (last.next.compareAndSet(next, node)) { // E9
+        // Insertion succeeded, try advancing tail
+        tail.compareAndSet(last, node);
+        return;
+      }
+    } else
+      // Queue in intermediate state, advance tail
+      tail.compareAndSet(last, next);
+    // }
+  }
+
+  public double take() { // from head
+    while (true) {
+      Node first = head.get(), last = tail.get(), next = first.next.get(); // D3
+      // if (first == head.get()) { // D5
+      if (first == last) {
+        if (next != null)
+          tail.compareAndSet(last, next);
+      } else {
+        double result = next.item;
+        if (head.compareAndSet(first, next)) {// D13
+          return result;
+        }
+      }
+      // }
+    }
+  }
+
+  private static class Node {
+    final double item;
+    final AtomicReference<Node> next;
+
+    public Node(double item, Node next) {
+      this.item = item;
+      this.next = new AtomicReference<Node>(next);
+    }
+  }
+}
+```
+### 9.2
+Compare and Swap (or Compare and Set) is always thread safe, due to the method actually checking if a value has changed. If a value has changed, the current thread helps another thread to increment head, and then tries again. It does this until a value hasn't changed (is as expected), and then it changes the value. Thus this is always thread safe.
+
+### 9.3
+```
+# OS:   Mac OS X; 10.14.1; x86_64
+# JVM:  Oracle Corporation; 1.8.0_151
+# CPU:  null; 4 "cores"
+# Date: 2018-12-13T19:46:15+0100
+sortPipeLine                         76,9 ms       9,37          4
+```
+This is even faster than the native java queue, but as we saw in previous exercises the MSQueue with compare and swap scales less efficiently than the native methods, when congestion gets more dense.
+
 ## Question 11
 

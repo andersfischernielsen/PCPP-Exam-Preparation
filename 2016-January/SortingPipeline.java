@@ -24,15 +24,16 @@ import java.util.concurrent.atomic.AtomicReference;
 public class SortingPipeline {
   public static void main(String[] args) {
     SystemInfo();
-    // final int count = 100_000, P = 4;
-    final int count = 8, P = 2;
+    final int count = 100_000, P = 4;
+    // final int count = 8, P = 2;
     final double[] arr = DoubleArray.randomPermutation(count);
     BlockingDoubleQueue[] queues = new BlockingDoubleQueue[P + 1];
     for (int i = 0; i < queues.length; i++) {
       // queues[i] = new WrappedArrayDoubleQueue();
       // queues[i] = new BlockingNDoubleQueue();
       // queues[i] = new UnboundedBlockingQueue();
-      queues[i] = new NolockNDoubleQueue();
+      // queues[i] = new NolockNDoubleQueue();
+      queues[i] = new MSUnboundedDoubleQueue();
     }
     Mark7("sortPipeLine", i -> sortPipeline(arr, P, queues)); // I'm in doubt
     // wether this the correct way to do it.
@@ -76,7 +77,7 @@ public class SortingPipeline {
     SortingStage[] sortingStages = new SortingStage[P + 2];
     // DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new
     // WrappedArrayDoubleQueue());
-    DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new NolockNDoubleQueue());
+    DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new MSUnboundedDoubleQueue());
     for (int i = 0; i < threads.length; i++) {
       if (i == 0)
         threads[i] = new Thread(dg); // initial double generator
@@ -116,7 +117,8 @@ public class SortingPipeline {
       // this.output = new WrappedArrayDoubleQueue();
       // this.output = new BlockingNDoubleQueue();
       // this.output = new UnboundedBlockingQueue();
-      this.output = new NolockNDoubleQueue();
+      // this.output = new NolockNDoubleQueue();
+      this.output = new MSUnboundedDoubleQueue();
       this.itemCount = itemCount;
       this.heap = new double[s];
       this.heapSize = 0;
@@ -256,6 +258,60 @@ interface BlockingDoubleQueue {
   double take();
 
   void put(double item);
+}
+
+class MSUnboundedDoubleQueue implements BlockingDoubleQueue {
+  private final AtomicReference<Node> head, tail;
+
+  public MSUnboundedDoubleQueue() {
+    Node dummy = new Node(0, null);
+    head = new AtomicReference<Node>(dummy);
+    tail = new AtomicReference<Node>(dummy);
+  }
+
+  public void put(double item) { // at tail
+    Node node = new Node(item, null);
+    Node last = tail.get(), next = last.next.get();
+    // if (last == tail.get()) { // E7
+    if (next == null) {
+      // In quiescent state, try inserting new node
+      if (last.next.compareAndSet(next, node)) { // E9
+        // Insertion succeeded, try advancing tail
+        tail.compareAndSet(last, node);
+        return;
+      }
+    } else
+      // Queue in intermediate state, advance tail
+      tail.compareAndSet(last, next);
+    // }
+  }
+
+  public double take() { // from head
+    while (true) {
+      Node first = head.get(), last = tail.get(), next = first.next.get(); // D3
+      // if (first == head.get()) { // D5
+      if (first == last) {
+        if (next != null)
+          tail.compareAndSet(last, next);
+      } else {
+        double result = next.item;
+        if (head.compareAndSet(first, next)) {// D13
+          return result;
+        }
+      }
+      // }
+    }
+  }
+
+  private static class Node {
+    final double item;
+    final AtomicReference<Node> next;
+
+    public Node(double item, Node next) {
+      this.item = item;
+      this.next = new AtomicReference<Node>(next);
+    }
+  }
 }
 
 class NolockNDoubleQueue implements BlockingDoubleQueue {
