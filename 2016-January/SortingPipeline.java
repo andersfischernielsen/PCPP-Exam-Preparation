@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicReference;
 public class SortingPipeline {
   public static void main(String[] args) {
     SystemInfo();
-    final int count = 100_000, P = 4;
+    final int count = 100_000, P = 8;
     // final int count = 8, P = 2;
     final double[] arr = DoubleArray.randomPermutation(count);
     BlockingDoubleQueue[] queues = new BlockingDoubleQueue[P + 1];
@@ -32,8 +32,8 @@ public class SortingPipeline {
       // queues[i] = new WrappedArrayDoubleQueue();
       // queues[i] = new BlockingNDoubleQueue();
       // queues[i] = new UnboundedBlockingQueue();
-      // queues[i] = new NolockNDoubleQueue();
-      queues[i] = new MSUnboundedDoubleQueue();
+      queues[i] = new NolockNDoubleQueue();
+      // queues[i] = new MSUnboundedDoubleQueue();
     }
     Mark7("sortPipeLine", i -> sortPipeline(arr, P, queues)); // I'm in doubt
     // wether this the correct way to do it.
@@ -77,7 +77,7 @@ public class SortingPipeline {
     SortingStage[] sortingStages = new SortingStage[P + 2];
     // DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new
     // WrappedArrayDoubleQueue());
-    DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new MSUnboundedDoubleQueue());
+    DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new NolockNDoubleQueue());
     for (int i = 0; i < threads.length; i++) {
       if (i == 0)
         threads[i] = new Thread(dg); // initial double generator
@@ -117,8 +117,8 @@ public class SortingPipeline {
       // this.output = new WrappedArrayDoubleQueue();
       // this.output = new BlockingNDoubleQueue();
       // this.output = new UnboundedBlockingQueue();
-      // this.output = new NolockNDoubleQueue();
-      this.output = new MSUnboundedDoubleQueue();
+      this.output = new NolockNDoubleQueue();
+      // this.output = new MSUnboundedDoubleQueue();
       this.itemCount = itemCount;
       this.heap = new double[s];
       this.heapSize = 0;
@@ -325,7 +325,6 @@ class NolockNDoubleQueue implements BlockingDoubleQueue {
   }
 
   public void put(double item) {
-    // use CAS? - No the assignment is to use a while loop. Why doesn't this work?
     while (tail - head == items.length) {
     }
     items[tail % items.length] = item;

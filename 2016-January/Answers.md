@@ -361,7 +361,62 @@ sortPipeLine                        230,9 ms      15,62          2
 
 ## Question 8
 
-### it doesn't work
+### 8.1
+```java
+class NolockNDoubleQueue implements BlockingDoubleQueue {
+  volatile int head, tail;
+  final double[] items;
+
+  public NolockNDoubleQueue() {
+    this.head = 0;
+    this.tail = 0;
+    this.items = new double[50];
+  }
+
+  public void put(double item) {
+    while (tail - head == items.length) {
+    }
+    items[tail % items.length] = item;
+    tail++;
+  }
+
+  public double take() {
+    while (tail - head == 0) {
+    }
+    double out = items[head % items.length];
+    head++;
+    return out;
+  }
+}
+```
+
+### 8.2
+`items` is declared final, because it ensures visibility and also we never want to change the reference.
+`head` and `tail` needs to be declared volatile to ensure visibility. Each thread must be able to see the changing `head` and `tail` values. 
+
+### 8.3
+**To be done**
+
+### 8.4
+The while loop makes sure that each thread waits for the other one. This only works if one thread only puts and another only takes. If a thread did both we would the thread would become stuck in the while loops and thus never terminate.
+The memory writes are visible to all threads, because `head` and `tail` has been declared volatile.
+
+### 8.5
+When it reaches 50.1 the method (might have something to do with the capacity, it gets stuck). But why?
+
+### 8.6
+```
+# OS:   Mac OS X; 10.14.1; x86_64
+# JVM:  Oracle Corporation; 1.8.0_151
+# CPU:  null; 4 "cores"
+# Date: 2018-12-13T19:54:25+0100
+sortPipeLine                      17576,5 ms     506,94          2
+```
+**DISCUSS**
+
+### 8.7
+**fucking doesn't terminate**
+
 
 ## Question 9
 
