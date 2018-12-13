@@ -8,7 +8,6 @@ import java.util.List;
 
 import akka.actor.*;
 
-
 class SortingPipelineAkka {
     public static void main(String[] args) {
         final ActorSystem system = ActorSystem.create("SortingPipelineSystem");
@@ -21,6 +20,7 @@ class SortingPipelineAkka {
         
         var l1 = new ArrayList<>(Arrays.asList(4.0,7.0,2.0,8.0,6.0,1.0,5.0,3.0));
         var l2 = new ArrayList<>(Arrays.asList(9.0,9.0,9.0,9.0,9.0,9.0,9.0,9.0));
+        
         transmit(l1, first);
         transmit(l2, first);
     }
