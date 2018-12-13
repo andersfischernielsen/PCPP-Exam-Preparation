@@ -24,17 +24,17 @@ import java.util.concurrent.atomic.AtomicReference;
 public class SortingPipeline {
   public static void main(String[] args) {
     SystemInfo();
-    final int count = 40, P = 4;
+    final int count = 100_000, P = 4;
     final double[] arr = DoubleArray.randomPermutation(count);
     BlockingDoubleQueue[] queues = new BlockingDoubleQueue[P + 1];
     for (int i = 0; i < queues.length; i++) {
       queues[i] = new WrappedArrayDoubleQueue();
     }
-    sortPipeline(arr, P, queues);
+    Mark7("sortPipeLine", i -> sortPipeline(arr, P, queues)); // I'm in doubt wether this the correct way to do it.
     // TO DO: Create and run pipeline to sort numbers from arr
   }
 
-  private static void sortPipeline(double[] arr, int P, BlockingDoubleQueue[] queues) {
+  private static double sortPipeline(double[] arr, int P, BlockingDoubleQueue[] queues) {
     // THIS WORKS SEQUENTIALLY!
     // DoubleGenerator dg = new DoubleGenerator(arr, 8, new
     // WrappedArrayDoubleQueue());
@@ -79,6 +79,7 @@ public class SortingPipeline {
       }
     } catch (InterruptedException e) {
     }
+    return 0; // modified sortPipeLine to be compatible with mark7.
   }
 
   static class SortingStage implements Runnable {
@@ -136,7 +137,7 @@ public class SortingPipeline {
 
   static class SortedChecker implements Runnable {
     // If DEBUG is true, print the first 100 numbers received
-    private final static boolean DEBUG = true;
+    private final static boolean DEBUG = false;
     private final BlockingDoubleQueue input;
     private final int itemCount; // the number of items to check
 
