@@ -231,7 +231,7 @@ sortPipeLine                        179,0 ms      21,59          2
 
 ### 6.1
 ```java
-lass BlockingNDoubleQueue implements BlockingDoubleQueue {
+class BlockingNDoubleQueue implements BlockingDoubleQueue {
   double[] items;
   int head, tail, currentSize;
 
