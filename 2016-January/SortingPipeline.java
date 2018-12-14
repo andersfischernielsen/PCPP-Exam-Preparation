@@ -40,9 +40,26 @@ public class SortingPipeline {
 
     // Test BlockingNDoubleQueue
     // ----------------------------------------------------------------------------
-    BlockingDoubleQueue[] queues = new BlockingNDoubleQueue[P + 1];
+    // BlockingDoubleQueue[] queues = new BlockingNDoubleQueue[P + 1];
+    // for (int i = 0; i < queues.length; i++) {
+    // queues[i] = new BlockingNDoubleQueue();
+    // }
+    // Mark7("Finished running sortPipeline", f -> sortPipeline(arr, P, queues));
+
+    // // Test LockingQueue
+    // //
+    // ----------------------------------------------------------------------------
+    // BlockingDoubleQueue[] queues = new UnboundedBlockingQueue[P + 1];
+    // for (int i = 0; i < queues.length; i++) {
+    // queues[i] = new UnboundedBlockingQueue();
+    // }
+    // Mark7("Finished running sortPipeline", f -> sortPipeline(arr, P, queues));
+
+    // Test NoLockNDoubleQueue
+    // ----------------------------------------------------------------------------
+    BlockingDoubleQueue[] queues = new NoLockNDoubleQueue[P + 1];
     for (int i = 0; i < queues.length; i++) {
-      queues[i] = new BlockingNDoubleQueue();
+      queues[i] = new NoLockNDoubleQueue();
     }
     Mark7("Finished running sortPipeline", f -> sortPipeline(arr, P, queues));
 
@@ -341,17 +358,77 @@ class BlockingNDoubleQueue implements BlockingDoubleQueue {
     tail = queue.length - head;
     head = 0;
   }
+}
 
-  /*
-   * public LockingQueue() { head = tail = new Node<T>(null, null); }
-   * 
-   * public synchronized void enqueue(T item) { // at tail Node<T> node = new
-   * Node<T>(item, null); tail.next = node; tail = node; }
-   * 
-   * public synchronized T dequeue() { // from head if (head.next == null) return
-   * null; Node<T> first = head; head = first.next; return head.item; }
-   * 
-   */
+// ------------------------------------------------------------
+// Unbounded lock-based queue with sentinel (dummy) node
+
+class UnboundedBlockingQueue implements BlockingDoubleQueue {
+  // Invariants:
+  // The node referred by tail is reachable from head.
+  // If non-empty then head != tail,
+  // and tail points to last item, and head.next to first item.
+  // If empty then head == tail.
+
+  private static class Node {
+    final double item;
+    Node next;
+
+    public Node(double item, Node next) {
+      this.item = item;
+      this.next = next;
+    }
+  }
+
+  private Node head, tail;
+
+  public UnboundedBlockingQueue() {
+    head = tail = new Node(-1.0, null);
+  }
+
+  public synchronized void put(double item) { // at tail
+    Node node = new Node(item, null);
+    tail.next = node;
+    tail = node;
+    notifyAll();
+  }
+
+  public synchronized double take() { // from head
+    while (head.next == null) {
+      try {
+        wait();
+      } catch (Exception e) {
+        // TODO: handle exception
+      }
+    }
+    Node first = head;
+    head = first.next;
+    return head.item;
+  }
+}
+
+class NoLockNDoubleQueue implements BlockingDoubleQueue {
+  volatile int head = 0, tail = 0;
+  final double[] items;
+
+  public NoLockNDoubleQueue() {
+    items = (double[]) new double[50];
+  }
+
+  public void put(double x) {
+    while (tail - head == items.length) {
+    }
+    items[tail % items.length] = x;
+    tail++;
+  }
+
+  public double take() {
+    while (tail - head == 0) {
+    }
+    double x = items[head % items.length];
+    head++;
+    return x;
+  }
 
 }
 

@@ -280,9 +280,7 @@ class BlockingNDoubleQueue implements BlockingDoubleQueue {
     return queue[head++]; 
   }
 
-  void reallocateQueue(){
-    //Should reallocate wait for queue to not be full?
-    //Don't think we can use i = head like this. It basically says queue[head-head] everytime == 0
+  void reallocateQueue(){    
     for (int i = head; i < queue.length; i++) {
       queue[i-head] = queue[i];
     }
@@ -303,6 +301,141 @@ If this is not the case, t1 will finish its' put operation.
 
 ### Question 6.3
 Finished running sortPipeline           713,6 ms      63,04          2
+
+
+## Question 7
+### Question 7.1
+```java
+class UnboundedBlockingQueue implements BlockingDoubleQueue {
+  // Invariants:
+  // The node referred by tail is reachable from head.
+  // If non-empty then head != tail,
+  // and tail points to last item, and head.next to first item.
+  // If empty then head == tail.
+
+  private static class Node {
+    final double item;
+    Node next;
+
+    public Node(double item, Node next) {
+      this.item = item;
+      this.next = next;
+    }
+  }
+
+  private Node head, tail;
+
+  public UnboundedBlockingQueue() {
+    head = tail = new Node(-1.0, new Node(-1.0, null));
+  }
+
+  public synchronized void put(double item) { // at tail
+    Node node = new Node(item, null);
+    tail.next = node;
+    tail = node;
+    notifyAll();
+  }
+
+  public synchronized double take() { // from head
+    while (head.next == null) {
+      try {
+        wait();
+      } catch (Exception e) {
+        // TODO: handle exception
+      }
+    }
+    Node first = head;
+    head = first.next;
+    return head.item;
+  }
+}
+```
+The queue is maintained as a linked-list of nodes with head and tail indexes initialized to a sentinel "dummy node". 
+Put operations on the queue will set the next pointer of the current tail, to point to the new node, and the tail index will
+be updated to point to the newly inserted note. 
+
+Take operations on the queue will first check if the list is empty, by checking whether the next field of the current tail is null.
+In that case, the take operation will wait, until another put termination has taken place, before revalidating the condition of the while loop.
+
+
+### Question 7.2
+Synchronizing both the put and take operations of the queue ensures, that a put method can never be performed at the same time as a take method, and eliminates the risk of race conditions. 
+Making threads wait in the case of an empty
+queue in the take method, and then notifying it when a put operation has been performed, will ensure that the program won't deadlock.
+Thus the queue is safe to use by multiple threads. 
+
+### Question 7.3
+```
+# OS:   Mac OS X; 10.14; x86_64
+# JVM:  Oracle Corporation; 1.8.0_60
+# CPU:  null; 4 "cores"
+# Date: 2018-12-14T15:24:20+0100
+Finished running sortPipeline           270,0 ms      41,48          2
+```
+
+## Question 8
+### Question 8.1
+```java
+class NoLockNDoubleQueue implements BlockingDoubleQueue {
+  volatile int head = 0, tail = 0;
+  double[] items;
+
+  public NoLockNDoubleQueue() {
+    items = (double[]) new double[50];
+  }
+
+  public void put(double x) {
+    while (tail - head == items.length) {
+    }
+    items[tail % items.length] = x;
+    tail++;
+  }
+
+  public double take() {
+    while (tail - head == 0) {
+    }
+    double x = items[head % items.length];
+    head++;
+    return x;
+  }
+
+}
+```
+### Question 8.2
+The variables head and tail are declared volatile. This is done to prevent visibility issues
+when several threads are working on the queue. Declaring the variables volatile ensures that all writes to the variables are written back to main memory immediately.
+
+The variable items should always refer to the same object, and thus it is declared final.
+
+### Question 8.3
+In order to call wait(), the the current thread must own the object's monitor. 
+In order for this to happen, we must execute either a synchronized instance method of the queue, a body of a synchronized block on the object or a synchronized static method for objects of NoLockNDoubleQueue.Class.
+
+We can't make use of notify for the same reason.
+
+### Question 8.4
+If one thread will only call put and the other thread will only call take, we will not arrive at a deadlock. 
+However, a deadlock could arise, in the situation where two threads will only call put or take. 
+If both threads only call take, they will deadlock once the queue is empty, since none of them will ever exit from the while loop.
+
+### Question 8.5
+Running without volatile variables causes a deadlock. 
+This happens for instance when a thread performing the take operation reads an empty queue into it's local cpu cache. Because the thread is never notified of any put operations, it will spin forever. 
+
+
+
+As can be seen, we have 
+### Question 8.6
+```
+# OS:   Mac OS X; 10.14; x86_64
+# JVM:  Oracle Corporation; 1.8.0_60
+# CPU:  null; 4 "cores"
+# Date: 2018-12-14T16:30:43+0100
+Finished running sortPipeline         26860,2 ms    2760,54          2
+```
+Takes a lot of time maaan......
+
+### Question 8.7
 
 
 
