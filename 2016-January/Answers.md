@@ -489,5 +489,76 @@ sortPipeLine                         76,9 ms       9,37          4
 ```
 This is even faster than the native java queue, but as we saw in previous exercises the MSQueue with compare and swap scales less efficiently than the native methods, when congestion gets more dense.
 
+## Question 10
+
+### 10.1
+```java
+class StmBlockingNDoubleQueue implements BlockingDoubleQueue {
+  private final TxnInteger availableItems, availableSpaces;
+  private final TxnRef<Double>[] items;
+  private final TxnInteger head, tail;
+
+  public StmBlockingNDoubleQueue() {
+    this.availableItems = newTxnInteger(0);
+    this.availableSpaces = newTxnInteger(50);
+    this.items = makeArray(50);
+    for (int i = 0; i < 50; i++)
+      this.items[i] = StmUtils.<Double>newTxnRef();
+    this.head = newTxnInteger(0);
+    this.tail = newTxnInteger(0);
+  }
+
+  public void put(double item) { // at tail
+    atomic(() -> {
+      if (availableSpaces.get() == 0)
+        retry();
+      else {
+        availableSpaces.decrement();
+        items[tail.get()].set(item);
+        tail.set((tail.get() + 1) % items.length);
+        availableItems.increment();
+      }
+    });
+  }
+
+  public double take() { // from head
+    return atomic(() -> {
+      if (availableItems.get() == 0) {
+        retry();
+        return null; // unreachable
+      } else {
+        availableItems.decrement();
+        double item = items[head.get()].get();
+        items[head.get()].set(null);
+        head.set((head.get() + 1) % items.length);
+        availableSpaces.increment();
+        return item;
+      }
+    });
+  }
+
+  @SuppressWarnings("unchecked")
+  private static <Double> TxnRef<Double>[] makeArray(int capacity) {
+    // Java's @$#@?!! type system requires this unsafe cast
+    return (TxnRef<Double>[]) new TxnRef[capacity];
+  }
+}
+```
+### 10.2
+It is optimistic conccurency. So you atempt to either put or take a value into the queue, and wraps the entire method in a `atomic` block. Thus if anything goes wrong, the method attempt to rerun in 2^x time, where x is the number of tries. This ensures thread safety. 
+
+### 10.3
+```
+# OS:   Mac OS X; 10.14.2; x86_64
+# JVM:  Oracle Corporation; 1.8.0_151
+# CPU:  null; 4 "cores"
+# Date: 2018-12-14T10:46:52+0100
+dec. 14, 2018 10:46:52 AM org.multiverse.api.GlobalStmInstance <clinit>
+INFO: Initializing GlobalStmInstance using factoryMethod 'org.multiverse.stms.gamma.GammaStm.createFast'.
+dec. 14, 2018 10:46:52 AM org.multiverse.api.GlobalStmInstance <clinit>
+INFO: Successfully initialized GlobalStmInstance using factoryMethod 'org.multiverse.stms.gamma.GammaStm.createFast'.
+sortPipeLine                       1137,2 ms     183,54          2
+```
+
 ## Question 11
 

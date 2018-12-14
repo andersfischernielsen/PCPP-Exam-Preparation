@@ -12,6 +12,10 @@
 // must be able to hold at least ceil(itemCount/stageCount) items,
 // which equals (itemCount-1)/stageCount+1.
 
+// Compile and run like this:
+//   javac -cp ~/lib/multiverse-core-0.7.0.jar TestStmQueues.java 
+//   java -cp ~/lib/multiverse-core-0.7.0.jar:. TestStmQueues
+
 // sestoft@itu.dk * 2016-01-10
 
 import java.util.stream.DoubleStream;
@@ -21,10 +25,18 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.function.IntToDoubleFunction;
 import java.util.concurrent.atomic.AtomicReference;
 
+//multiverse
+import org.multiverse.api.Txn;
+import org.multiverse.api.references.*;
+import org.multiverse.api.callables.*;
+import org.multiverse.api.GlobalStmInstance;
+import org.multiverse.api.StmUtils;
+import static org.multiverse.api.StmUtils.*;
+
 public class SortingPipeline {
   public static void main(String[] args) {
     SystemInfo();
-    final int count = 100_000, P = 8;
+    final int count = 100_000, P = 4;
     // final int count = 8, P = 2;
     final double[] arr = DoubleArray.randomPermutation(count);
     BlockingDoubleQueue[] queues = new BlockingDoubleQueue[P + 1];
@@ -32,8 +44,10 @@ public class SortingPipeline {
       // queues[i] = new WrappedArrayDoubleQueue();
       // queues[i] = new BlockingNDoubleQueue();
       // queues[i] = new UnboundedBlockingQueue();
-      queues[i] = new NolockNDoubleQueue();
+      // queues[i] = new NolockNDoubleQueue();
       // queues[i] = new MSUnboundedDoubleQueue();
+      queues[i] = new StmBlockingNDoubleQueue();
+
     }
     Mark7("sortPipeLine", i -> sortPipeline(arr, P, queues)); // I'm in doubt
     // wether this the correct way to do it.
@@ -77,7 +91,7 @@ public class SortingPipeline {
     SortingStage[] sortingStages = new SortingStage[P + 2];
     // DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new
     // WrappedArrayDoubleQueue());
-    DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new NolockNDoubleQueue());
+    DoubleGenerator dg = new DoubleGenerator(arr, arr.length, new StmBlockingNDoubleQueue());
     for (int i = 0; i < threads.length; i++) {
       if (i == 0)
         threads[i] = new Thread(dg); // initial double generator
@@ -117,8 +131,9 @@ public class SortingPipeline {
       // this.output = new WrappedArrayDoubleQueue();
       // this.output = new BlockingNDoubleQueue();
       // this.output = new UnboundedBlockingQueue();
-      this.output = new NolockNDoubleQueue();
+      // this.output = new NolockNDoubleQueue();
       // this.output = new MSUnboundedDoubleQueue();
+      this.output = new StmBlockingNDoubleQueue();
       this.itemCount = itemCount;
       this.heap = new double[s];
       this.heapSize = 0;
@@ -258,6 +273,57 @@ interface BlockingDoubleQueue {
   double take();
 
   void put(double item);
+}
+
+class StmBlockingNDoubleQueue implements BlockingDoubleQueue {
+  private final TxnInteger availableItems, availableSpaces;
+  private final TxnRef<Double>[] items;
+  private final TxnInteger head, tail;
+
+  public StmBlockingNDoubleQueue() {
+    this.availableItems = newTxnInteger(0);
+    this.availableSpaces = newTxnInteger(50);
+    this.items = makeArray(50);
+    for (int i = 0; i < 50; i++)
+      this.items[i] = StmUtils.<Double>newTxnRef();
+    this.head = newTxnInteger(0);
+    this.tail = newTxnInteger(0);
+  }
+
+  public void put(double item) { // at tail
+    atomic(() -> {
+      if (availableSpaces.get() == 0)
+        retry();
+      else {
+        availableSpaces.decrement();
+        items[tail.get()].set(item);
+        tail.set((tail.get() + 1) % items.length);
+        availableItems.increment();
+      }
+    });
+  }
+
+  public double take() { // from head
+    return atomic(() -> {
+      if (availableItems.get() == 0) {
+        retry();
+        return null; // unreachable
+      } else {
+        availableItems.decrement();
+        double item = items[head.get()].get();
+        items[head.get()].set(null);
+        head.set((head.get() + 1) % items.length);
+        availableSpaces.increment();
+        return item;
+      }
+    });
+  }
+
+  @SuppressWarnings("unchecked")
+  private static <Double> TxnRef<Double>[] makeArray(int capacity) {
+    // Java's @$#@?!! type system requires this unsafe cast
+    return (TxnRef<Double>[]) new TxnRef[capacity];
+  }
 }
 
 class MSUnboundedDoubleQueue implements BlockingDoubleQueue {
