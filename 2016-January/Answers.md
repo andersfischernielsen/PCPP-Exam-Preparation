@@ -437,7 +437,167 @@ Takes a lot of time maaan......
 
 ### Question 8.7
 
+```
+# OS:   Mac OS X; 10.14; x86_64
+# JVM:  Oracle Corporation; 1.8.0_60
+# CPU:  null; 4 "cores"
+# Date: 2018-12-15T14:13:30+0100
+```
 
+| P | Running time |
+| 2 | 44,8 ms 6,34  8 |
+| 8 | N/A             |
+
+
+When running with 8 stages, this doesn't seem to termiintated. 
+
+
+## Question 9
+
+### Question 9.1
+```Java
+class MSUnboundedDoubleQueue implements BlockingDoubleQueue {
+  private final AtomicReference<Node<Double>> head, tail;
+
+  public MSUnboundedDoubleQueue() {
+    Node<Double> dummy = new Node<Double>(null, null);
+    head = new AtomicReference<Node<Double>>(dummy);
+    tail = new AtomicReference<Node<Double>>(dummy);
+  }
+
+  public void put(double item) { // at tail
+    Node<Double> node = new Node<Double>(item, null);
+    while (true) {
+      Node<Double> last = tail.get(), next = last.next.get();
+      if (next == null) {
+        // In quiescent state, try inserting new node
+        if (last.next.compareAndSet(next, node)) { // E9
+          // Insertion succeeded, try advancing tail
+          tail.compareAndSet(last, node);
+          return;
+        }
+      } else
+        // Queue in intermediate state, advance tail
+        tail.compareAndSet(last, next);
+    }
+  }
+
+  public double take() { // from head
+    while (true) {
+      Node<Double> first = head.get(), last = tail.get(), next = first.next.get();
+
+      if (first == last) {
+
+        if (next != null) {
+          tail.compareAndSet(last, next);
+        }
+
+      } else {
+        double result = next.item;
+        if (head.compareAndSet(first, next))
+          return result;
+      }
+
+    }
+  }
+
+  private static class Node<Double> {
+    final Double item;
+    final AtomicReference<Node<Double>> next;
+
+    public Node(Double item, Node<Double> next) {
+      this.item = item;
+      this.next = new AtomicReference<Node<Double>>(next);
+    }
+  }
+
+}
+
+```
+
+### Question 9.2
+Thread safeness is ensured by the while loop and the compare and swap operations in both put and take operations on the queue. 
+In take the while loop ensures that we always return the head value, since we either just spin if the queue is empty, or return result once we  have confirmed that head is still the head. If it's not, we just try again, until we succeed.   
+
+### Question 9.3
+Finished running sortPipeline           202,6 ms     146,22          2
+Very fast
+
+
+## Question 10
+
+### Question 10.1
+```java
+class StmBlockingNDoubleQueue implements BlockingDoubleQueue {
+  private final TxnInteger availableItems, availableSpaces;
+  private final TxnRef<Double>[] items;
+  private final TxnInteger head, tail;
+  private final int capacity;
+
+  public StmBlockingNDoubleQueue() {
+    capacity = 50;
+    this.availableItems = newTxnInteger(0);
+    this.availableSpaces = newTxnInteger(capacity);
+    this.items = makeArray(capacity);
+    for (int i = 0; i < capacity; i++)
+      this.items[i] = StmUtils.<Double>newTxnRef();
+    this.head = newTxnInteger(0);
+    this.tail = newTxnInteger(0);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static TxnRef<Double>[] makeArray(int capacity) {
+    // Java's @$#@?!! type system requires this unsafe cast
+    return (TxnRef<Double>[]) new TxnRef[capacity];
+  }
+
+  public boolean isEmpty() {
+    return atomic(() -> availableItems.get() == 0);
+  }
+
+  public boolean isFull() {
+    return atomic(() -> availableSpaces.get() == 0);
+  }
+
+  public void put(double item) { // at tail
+    atomic(() -> {
+      if (availableSpaces.get() == 0)
+        retry();
+      else {
+        availableSpaces.decrement();
+        items[tail.get()].set(item);
+        tail.set((tail.get() + 1) % items.length);
+        availableItems.increment();
+      }
+    });
+  }
+
+  public double take() { // from head
+    return atomic(() -> {
+      if (availableItems.get() == 0) {
+        retry();
+        return null; // unreachable
+      } else {
+        availableItems.decrement();
+        double item = items[head.get()].get();
+        items[head.get()].set(null);
+        head.set((head.get() + 1) % items.length);
+        availableSpaces.increment();
+        return item;
+      }
+    });
+  }
+}
+```
+
+### Question 10.2
+The queue makes use of optimistic concurrency which utilizez atomic transactions.
+In this case, when we try to put or take an element out of the queue, the action will either 
+succeed or fail, depending on whether any of the variables in the read or write set have changed. If not we commit the changes and succeed, otherwise we restart.
+
+### Question 10.3
+Finished running sortPipeline          1150,8 ms      75,44          2
+Decent, not as fast as MSQueue tho..
 
 
 ## Question 11

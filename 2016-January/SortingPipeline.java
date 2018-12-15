@@ -17,9 +17,19 @@
 import java.util.stream.DoubleStream;
 import java.util.function.DoubleFunction;
 import java.util.function.Function;
+import java.io.Serializable;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.function.IntToDoubleFunction;
 import java.util.concurrent.atomic.AtomicReference;
+
+import org.multiverse.api.Txn;
+import org.multiverse.api.references.*;
+import org.multiverse.api.callables.*;
+import org.multiverse.api.GlobalStmInstance;
+import org.multiverse.api.StmUtils;
+import static org.multiverse.api.StmUtils.*;
+
+import java.util.concurrent.Callable;
 
 public class SortingPipeline {
   public static void main(String[] args) {
@@ -55,12 +65,32 @@ public class SortingPipeline {
     // }
     // Mark7("Finished running sortPipeline", f -> sortPipeline(arr, P, queues));
 
-    // Test NoLockNDoubleQueue
+    // // Test NoLockNDoubleQueue
+    // //
     // ----------------------------------------------------------------------------
-    BlockingDoubleQueue[] queues = new NoLockNDoubleQueue[P + 1];
+    // BlockingDoubleQueue[] queues = new NoLockNDoubleQueue[P + 1];
+    // for (int i = 0; i < queues.length; i++) {
+    // queues[i] = new NoLockNDoubleQueue();
+    // }
+    // Mark7("Finished running sortPipeline", f -> sortPipeline(arr, P, queues));
+
+    // // Test MSUnboundedDoubleQueue
+    // //
+    // ----------------------------------------------------------------------------
+    // BlockingDoubleQueue[] queues = new MSUnboundedDoubleQueue[P + 1];
+    // for (int i = 0; i < queues.length; i++) {
+    // queues[i] = new MSUnboundedDoubleQueue();
+    // }
+    // // sortPipeline(arr, P, queues);
+    // Mark7("Finished running sortPipeline", f -> sortPipeline(arr, P, queues));
+
+    // Test StmBlockingNDoubleQueue
+    // ----------------------------------------------------------------------------
+    BlockingDoubleQueue[] queues = new StmBlockingNDoubleQueue[P + 1];
     for (int i = 0; i < queues.length; i++) {
-      queues[i] = new NoLockNDoubleQueue();
+      queues[i] = new StmBlockingNDoubleQueue();
     }
+    // sortPipeline(arr, P, queues);
     Mark7("Finished running sortPipeline", f -> sortPipeline(arr, P, queues));
 
   }
@@ -430,6 +460,123 @@ class NoLockNDoubleQueue implements BlockingDoubleQueue {
     return x;
   }
 
+}
+
+class MSUnboundedDoubleQueue implements BlockingDoubleQueue {
+  private final AtomicReference<Node<Double>> head, tail;
+
+  public MSUnboundedDoubleQueue() {
+    Node<Double> dummy = new Node<Double>(null, null);
+    head = new AtomicReference<Node<Double>>(dummy);
+    tail = new AtomicReference<Node<Double>>(dummy);
+  }
+
+  public void put(double item) { // at tail
+    Node<Double> node = new Node<Double>(item, null);
+    while (true) {
+      Node<Double> last = tail.get(), next = last.next.get();
+      if (next == null) {
+        // In quiescent state, try inserting new node
+        if (last.next.compareAndSet(next, node)) { // E9
+          // Insertion succeeded, try advancing tail
+          tail.compareAndSet(last, node);
+          return;
+        }
+      } else
+        // Queue in intermediate state, advance tail
+        tail.compareAndSet(last, next);
+    }
+  }
+
+  public double take() { // from head
+    while (true) {
+      Node<Double> first = head.get(), last = tail.get(), next = first.next.get();
+
+      if (first == last) {
+
+        if (next != null) {
+          tail.compareAndSet(last, next);
+        }
+
+      } else {
+        double result = next.item;
+        if (head.compareAndSet(first, next))
+          return result;
+      }
+
+    }
+  }
+
+  private static class Node<Double> {
+    final Double item;
+    final AtomicReference<Node<Double>> next;
+
+    public Node(Double item, Node<Double> next) {
+      this.item = item;
+      this.next = new AtomicReference<Node<Double>>(next);
+    }
+  }
+}
+
+class StmBlockingNDoubleQueue implements BlockingDoubleQueue {
+  private final TxnInteger availableItems, availableSpaces;
+  private final TxnRef<Double>[] items;
+  private final TxnInteger head, tail;
+  private final int capacity;
+
+  public StmBlockingNDoubleQueue() {
+    capacity = 50;
+    this.availableItems = newTxnInteger(0);
+    this.availableSpaces = newTxnInteger(capacity);
+    this.items = makeArray(capacity);
+    for (int i = 0; i < capacity; i++)
+      this.items[i] = StmUtils.<Double>newTxnRef();
+    this.head = newTxnInteger(0);
+    this.tail = newTxnInteger(0);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static TxnRef<Double>[] makeArray(int capacity) {
+    // Java's @$#@?!! type system requires this unsafe cast
+    return (TxnRef<Double>[]) new TxnRef[capacity];
+  }
+
+  public boolean isEmpty() {
+    return atomic(() -> availableItems.get() == 0);
+  }
+
+  public boolean isFull() {
+    return atomic(() -> availableSpaces.get() == 0);
+  }
+
+  public void put(double item) { // at tail
+    atomic(() -> {
+      if (availableSpaces.get() == 0)
+        retry();
+      else {
+        availableSpaces.decrement();
+        items[tail.get()].set(item);
+        tail.set((tail.get() + 1) % items.length);
+        availableItems.increment();
+      }
+    });
+  }
+
+  public double take() { // from head
+    return atomic(() -> {
+      if (availableItems.get() == 0) {
+        retry();
+        return null; // unreachable
+      } else {
+        availableItems.decrement();
+        double item = items[head.get()].get();
+        items[head.get()].set(null);
+        head.set((head.get() + 1) % items.length);
+        availableSpaces.increment();
+        return item;
+      }
+    });
+  }
 }
 
 // ----------------------------------------------------------------------
