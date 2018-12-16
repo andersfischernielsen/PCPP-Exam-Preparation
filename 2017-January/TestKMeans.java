@@ -2,33 +2,27 @@
 // Various implementations of k-means clustering
 // sestoft@itu.dk * 2017-01-04
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Random;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.Random;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Function;
+import java.util.function.IntFunction;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
-
-import java.util.function.IntFunction;
-import java.util.function.Function;
-
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-
-import java.util.concurrent.Callable;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Future;
 
 public class TestKMeans {
   public static void main(String[] args) {
     // There are n points and k clusters
-    // final int n = 200_000, k = 81;
-    final int n = 9, k = 3;
+    final int n = 200_000, k = 81;
+    // final int n = 9, k = 3;
     final Point[] points = GenerateData.randomPoints(n);
     final int[] initialPoints = GenerateData.randomIndexes(n, k);
     for (int i = 0; i < 3; i++) {
@@ -106,82 +100,148 @@ class KMeans1P implements KMeans {
 
   public void findClusters(int[] initialPoints) {
     Cluster[] clusters = GenerateData.initialClusters(points, initialPoints, Cluster::new, Cluster[]::new);
-    boolean converged = false;
-    ExecutorService es = Executors.newFixedThreadPool(2);
-    ArrayList<Callable<Void>> assignmentTasks = new ArrayList<>();
-    ArrayList<Callable<Cluster>> updateTasks = new ArrayList<>();
-    List<Future<Void>> assignmentFutures = new ArrayList<Future<Void>>();
+    AtomicBoolean converged = new AtomicBoolean();
+    ExecutorService es = Executors.newWorkStealingPool();
+
     List<Future<Cluster>> updateFutures = new ArrayList<Future<Cluster>>();
-    int P = 2, perTask = points.length / P;
-    while (!converged) {
+    while (!converged.get()) {
       iterations++;
       { // Assignment step: put each point in exactly one cluster
+        final int P = 8, perTask = points.length / P;
+        List<Callable<Void>> assignmentTasks = new ArrayList<>();
         for (int i = 0; i < P; i++) {
           final int from = perTask * i;
           final int to = (i + 1 == P) ? points.length : perTask * (i + 1);
-          assignmentTasks.add(assignShit(from, to, clusters, points));
-          // final int from = perTask * i;
-          // final int to = (i + 1 == P) ? points.length : perTask * (i + 1);
-          // futures.add(es.submit(assignShit(from, to, clusters, points)));
+          final Cluster[] finaClusters = clusters;
+          assignmentTasks.add(() -> {
+            for (int j = from; j < to; j++) {
+              final Point p = points[j];
+              Cluster best = null;
+              for (Cluster c : finaClusters)
+                if (best == null || p.sqrDist(c.mean) < p.sqrDist(best.mean))
+                  best = c;
+              best.add(p);
+            }
+            return null;
+          });
         }
         try {
-          assignmentFutures = es.invokeAll(assignmentTasks);
+          List<Future<Void>> assignmentFutures = es.invokeAll(assignmentTasks);
           for (Future<Void> fut : assignmentFutures)
             fut.get();
         } catch (Exception e) {
         }
       }
       { // Update step: recompute mean of each cluster
+        converged.set(true);
         ArrayList<Cluster> newClusters = new ArrayList<>();
-        converged = true;
-        for (Cluster c : clusters) {
-          // // updateTasks.add(updateShit(converged, newClusters, c));
-          // updateTasks.add(new Callable<Cluster>() {
-          // public Cluster call() {
-          // // System.out.println(c);
-          // Point mean = c.computeMean();
-          // return new Cluster(mean);
-          // // System.out.println(c);
-          // // System.out.println("------------");
-          // }
-          // });
-          Point mean = c.computeMean();
-          if (!c.mean.almostEquals(mean)) {
-            converged = false;
-          }
-          System.out.println(converged);
-          if (mean != null)
-            newClusters.add(new Cluster(mean));
-          else
-            System.out.printf("===> Empty cluster at %s%n", c.mean);
+        final Cluster[] finalClusters1 = clusters; // effective final while working in parallel
+        List<Callable<Cluster>> updateTasks = new ArrayList<>();
+        for (int i = 0; i < clusters.length; i++) {
+          final int clusterNumber = i;
+          updateTasks.add(new Callable<Cluster>() {
+            public Cluster call() {
+              Cluster result = null;
+              Cluster c = finalClusters1[clusterNumber];
+              Point mean = c.computeMean();
+              if (!c.mean.almostEquals(mean))
+                converged.set(false);
+              if (mean != null)
+                result = new Cluster(mean);
+              else
+                System.out.printf("===> Empty cluster at %s%n", c.mean);
+              return result;
+            }
+          });
         }
-        // try {
-        // updateFutures = es.invokeAll(updateTasks);
-        // for (Future<Cluster> fut : updateFutures) {
-        // Cluster c = fut.get();
-        // Point mean = c.computeMean();
-        // System.out.println("1: " + mean);
-        // System.out.println("2: " + c.mean);
-        // System.out.println("3: " + c.mean.almostEquals(mean));
-
-        // if (!c.mean.almostEquals(mean)) {
-        // converged = false;
-        // }
-        // // System.out.println(converged);
-        // if (c.mean != null)
-        // newClusters.add(c);
-        // else
-        // System.out.printf("===> Empty cluster at %s%n", c.mean);
-        // }
-
-        // } catch (Exception e) {
-        // }
+        try {
+          updateFutures = es.invokeAll(updateTasks);
+          for (Future<Cluster> fut : updateFutures) {
+            Cluster c = fut.get();
+            newClusters.add(c);
+          }
+        } catch (Exception e) {
+        }
         clusters = newClusters.toArray(new Cluster[newClusters.size()]);
       }
     }
-    es.shutdown();
     this.clusters = clusters;
+    es.shutdown();
   }
+
+  // public void findClusters(int[] initialPoints) {
+  // Cluster[] clusters = GenerateData.initialClusters(points, initialPoints,
+  // Cluster::new, Cluster[]::new);
+  // final AtomicBoolean converged = new AtomicBoolean();
+  // ExecutorService executorService = Executors.newWorkStealingPool();
+  // while (!converged.get()) {
+  // iterations++;
+  // { // Assignment step: put each point in exactly one cluster
+  // List<Callable<Void>> tasks = new ArrayList<>();
+  // final int taskCount = 8, perTask = points.length / taskCount;
+  // for (int t = 0; t < taskCount; t++) {
+  // final int from = perTask * t, to = (t + 1 == taskCount) ? points.length :
+  // perTask * (t + 1);
+  // final Cluster[] finalClusters = clusters; // effective final while we are
+  // working in parallel
+  // tasks.add(() -> {
+  // for (int i = from; i < to; i++) {
+  // final Point p = points[i];
+  // Cluster best = null;
+  // for (Cluster c : finalClusters)
+  // if (best == null || p.sqrDist(c.mean) < p.sqrDist(best.mean))
+  // best = c;
+  // best.add(p);
+  // }
+  // return null;
+  // });
+  // }
+  // try {
+  // List<Future<Void>> futures = executorService.invokeAll(tasks);
+  // for (Future<?> future : futures)
+  // future.get();
+  // } catch (InterruptedException exn) {
+  // System.out.println("Interrupted: " + exn);
+  // } catch (ExecutionException e) {
+  // throw new RuntimeException(e);
+  // }
+  // }
+  // { // Update step: recompute mean of each cluster
+  // converged.set(true);
+  // final ArrayList<Cluster> newClusters = new ArrayList<>();
+  // final Cluster[] finalClusters1 = clusters; // effective final while working
+  // in parallel
+  // Future[] futures = new Future[clusters.length];
+  // for (int t = 0; t < clusters.length; t++) {
+  // final int thisCluster = t;
+  // futures[t] = (executorService.submit((() -> {
+  // Cluster c = finalClusters1[thisCluster];
+  // Cluster result = null;
+  // Point mean = c.computeMean();
+  // if (!c.mean.almostEquals(mean))
+  // converged.set(false);
+  // if (mean != null)
+  // result = new Cluster(mean);
+  // else
+  // System.out.printf("===> Empty cluster at %s%n", c.mean);
+  // return result;
+  // })));
+  // }
+  // try {
+  // for (Future<Cluster> future : futures)
+  // newClusters.add(future.get());
+  // } catch (InterruptedException exn) {
+  // System.out.println("Interrupted: " + exn);
+  // } catch (ExecutionException e) {
+  // throw new RuntimeException(e);
+  // }
+
+  // clusters = newClusters.toArray(new Cluster[newClusters.size()]);
+  // }
+  // }
+  // this.clusters = clusters;
+  // executorService.shutdown();
+  // }
 
   public void print() {
     for (Cluster c : clusters)
@@ -413,7 +473,9 @@ class KMeans3 implements KMeans {
       iterations++;
       { // Assignment step: put each point in exactly one cluster
         final Cluster[] clustersLocal = clusters; // For capture in lambda
-        // Map<Cluster, List<Point>> groups = ... TODO ...
+        // Stream<Point> pStream = Stream.of(points);
+        // Map<Cluster, List<Point>> groups =
+        // pStream.collect(Collectors.groupingBy(classifier))
         // clusters = groups.entrySet().stream().map(...) ... TODO ...;
       }
       { // Update step: recompute mean of each cluster
