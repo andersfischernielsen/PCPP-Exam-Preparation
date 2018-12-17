@@ -330,26 +330,37 @@ class KMeans3P implements KMeans {
       iterations++;
       { // Assignment step: put each point in exactly one cluster
         final Cluster[] clustersLocal = clusters; // For capture in lambda
-        Map<Cluster, List<Point>> groups = Arrays.stream(points).parallel().collect(Collectors.groupingBy(p -> {
-          Cluster best = null;
-          for (var c : clustersLocal) {
-            if (best == null || p.sqrDist(c.mean) < p.sqrDist(best.mean)) {
-              best = c;
-            }
-          }
-          return best;
-        }, Collectors.toList()));
+        Map<Cluster, List<Point>> groups = Arrays.stream(points)
+          .parallel()
+          .collect(Collectors.groupingBy(p -> bestClusterForPoint(p, clustersLocal), Collectors.toList()));
 
-        clusters = groups.entrySet().stream().parallel().map(c -> new Cluster(c.getKey().mean, c.getValue()))
-            .toArray(Cluster[]::new);
-      }
-      { // Update step: recompute mean of each cluster
-        Cluster[] newClusters = Arrays.stream(clusters).parallel().map(c -> c.computeMean()).toArray(Cluster[]::new);
+        clusters = groups
+          .entrySet()
+          .stream()
+          .parallel()
+          .map(c -> new Cluster(c.getKey().mean, c.getValue()))
+          .toArray(Cluster[]::new);
+          
+        var newClusters = Arrays.stream(clusters)
+          .parallel()
+          .map(c -> c.computeMean())
+          .toArray(Cluster[]::new);
+
         converged = Arrays.equals(clusters, newClusters);
         clusters = newClusters;
       }
     }
     this.clusters = clusters;
+  }
+
+  private Cluster bestClusterForPoint(Point p, Cluster[] clusters) {
+      Cluster best = null;
+      for (var c : clusters) {
+        if (best == null || p.sqrDist(c.mean) < p.sqrDist(best.mean)) {
+          best = c;
+        }
+      }
+      return best;
   }
 
   public void print() {
