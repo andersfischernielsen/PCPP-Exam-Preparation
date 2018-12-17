@@ -23,6 +23,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
 
 public class TestKMeans {
   public static void main(String[] args) {
@@ -31,7 +32,7 @@ public class TestKMeans {
     final Point[] points = GenerateData.randomPoints(n);
     final int[] initialPoints = GenerateData.randomIndexes(n, k);
     for (int i = 0; i < 3; i++) {
-      timeKMeans(new KMeans1P(points, k), initialPoints);
+      timeKMeans(new KMeans3(points, k), initialPoints);
       // timeKMeans(new KMeans1P(points, k), initialPoints);
       // timeKMeans(new KMeans2(points, k), initialPoints);
       // timeKMeans(new KMeans2P(points, k), initialPoints);
@@ -181,7 +182,7 @@ class KMeans1P implements KMeans {
 
 // ----------------------------------------------------------------------
 
-class KMeans2 implements KMeans {
+class KMeans2P implements KMeans {
   // Sequential version 2. Data represention: An array points of
   // Points and a same-index array myCluster of the Cluster to which
   // each point belongs, so that points[pi] belongs to myCluster[pi],
@@ -193,7 +194,7 @@ class KMeans2 implements KMeans {
   private Cluster[] clusters;
   private int iterations;
 
-  public KMeans2(Point[] points, int k) {
+  public KMeans2P(Point[] points, int k) {
     this.points = points;
     this.k = k;
   }
@@ -201,8 +202,10 @@ class KMeans2 implements KMeans {
   public void findClusters(int[] initialPoints) {
     final Cluster[] clusters = GenerateData.initialClusters(points, initialPoints, Cluster::new, Cluster[]::new);
     final Cluster[] myCluster = new Cluster[points.length];
-    boolean converged = false;
-    while (!converged) {
+    var converged = new AtomicBoolean(false);
+    var executor = Executors.newWorkStealingPool();
+
+    while (!converged.get()) {
       iterations++;
       {
         // Assignment step: put each point in exactly one cluster
@@ -216,18 +219,41 @@ class KMeans2 implements KMeans {
         }
       }
       {
+        final var threads = 8;
         // Update step: recompute mean of each cluster
-        for (Cluster c : clusters)
-          c.resetMean();
-        for (int pi = 0; pi < points.length; pi++)
-          myCluster[pi].addToMean(points[pi]);
-        converged = true;
-        for (Cluster c : clusters)
-          converged = converged && c.computeNewMean();
+        for (var i = 0; i < threads; i++) {
+          final var currentThread = i;
+          final var clusterChunk = clusters.length / 8;
+          final var from = clusterChunk * currentThread;
+          final var to = currentThread + 1 == k ? k + 1 : clusterChunk * (currentThread + 1);
+
+          executor.execute(() -> {
+            for (var j = from; j < to; j++) {
+              clusters[j].resetMean();
+            }
+          });
+
+          final var pointChunk = points.length / 8;
+          final var pointFrom = pointChunk * currentThread;
+          final var pointTo = currentThread + 1 == k ? k + 1 : pointChunk * (currentThread + 1);
+          executor.execute(() -> {
+            for (var j = pointFrom; j < pointTo; j++) {
+              myCluster[j].addToMean(points[j]);
+            }
+          });
+
+          converged.set(true);
+          executor.execute(() -> {
+            for (var j = from; j < to; j++) {
+              converged.set(converged.get() && clusters[j].computeNewMean());
+            }
+          });
+        }
       }
       // System.out.printf("[%d]", iterations); // To diagnose infinite loops
     }
     this.clusters = clusters;
+
   }
 
   public void print() {
@@ -245,26 +271,26 @@ class KMeans2 implements KMeans {
       this.mean = mean;
     }
 
-    public void addToMean(Point p) {
+    public synchronized void addToMean(Point p) {
       sumx += p.x;
       sumy += p.y;
       count++;
     }
 
     // Recompute mean, return true if it stays almost the same, else false
-    public boolean computeNewMean() {
+    public synchronized boolean computeNewMean() {
       Point oldMean = this.mean;
       this.mean = new Point(sumx / count, sumy / count);
       return oldMean.almostEquals(this.mean);
     }
 
-    public void resetMean() {
+    public synchronized void resetMean() {
       sumx = sumy = 0.0;
       count = 0;
     }
 
     @Override
-    public Point getMean() {
+    public synchronized Point getMean() {
       return mean;
     }
   }
@@ -293,13 +319,23 @@ class KMeans3 implements KMeans {
       iterations++;
       { // Assignment step: put each point in exactly one cluster
         final Cluster[] clustersLocal = clusters; // For capture in lambda
-        // Map<Cluster, List<Point>> groups = ... TODO ...
-        // clusters = groups.entrySet().stream().map(...) ... TODO ...;
+        Map<Cluster, List<Point>> groups = Arrays.stream(points).parallel().collect(Collectors.groupingBy(p -> {
+          Cluster best = null;
+          for (var c : clustersLocal) {
+            if (best == null || p.sqrDist(c.mean) < p.sqrDist(best.mean)) {
+              best = c;
+            }
+          }
+          return best;
+        }, Collectors.toList()));
+
+        clusters = groups.entrySet().stream().parallel().map(c -> new Cluster(c.getKey().mean, c.getValue()))
+            .toArray(Cluster[]::new);
       }
       { // Update step: recompute mean of each cluster
-        // Cluster[] newClusters = ... TODO ...
-        // converged = Arrays.equals(clusters, newClusters);
-        // clusters = newClusters;
+        Cluster[] newClusters = Arrays.stream(clusters).parallel().map(c -> c.computeMean()).toArray(Cluster[]::new);
+        converged = Arrays.equals(clusters, newClusters);
+        clusters = newClusters;
       }
     }
     this.clusters = clusters;
