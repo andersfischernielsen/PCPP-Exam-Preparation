@@ -99,34 +99,103 @@ class KMeans2P implements KMeans {
   public void findClusters(int[] initialPoints) {
     final Cluster[] clusters = GenerateData.initialClusters(points, initialPoints, Cluster::new, Cluster[]::new);
     final Cluster[] myCluster = new Cluster[points.length];
-    boolean converged = false;
-    while (!converged) {
+    AtomicBoolean converged = new AtomicBoolean(false);
+    ExecutorService es = Executors.newWorkStealingPool();
+
+    while (!converged.get()) {
+
       iterations++;
       {
         // Assignment step: put each point in exactly one cluster
+        List<Callable<Void>> assignmentTasks = new ArrayList<>();
+
+        // Seperate into 8 task
         final int taskCount = 8, perTask = points.length / taskCount;
         for (int t = 0; t < taskCount; t++) {
           final int from = perTask * t, to = (t + 1 == taskCount) ? points.length : perTask * (t + 1);
+          final Cluster[] finalClusters = clusters; // final reference needed for lambda operations
+          // System.out.println("From: " + from + " To: " + to);
+
+          assignmentTasks.add(() -> {
+            // Iterate over the points allocated for the task
+            // NOTE: Remember to fixed Cluster class so it's thread safe, before testing
+            for (int i = from; i < to; i++) {
+              Point p = points[i];
+              Cluster best = null;
+              // For loop instead, so we only hit clusters with index corresponding to from
+              // and to
+
+              for (Cluster c : finalClusters) {
+                if (best == null || p.sqrDist(c.mean) < p.sqrDist(best.mean)) {
+                  best = c;
+                }
+                // best.addToMean(p);//Necessary?
+                myCluster[i] = best;
+              }
+
+            }
+            return null;
+          });
+        }
+        // All assignmentTasks are now ready, try to invoke them
+        try {
+          List<Future<Void>> futures = es.invokeAll(assignmentTasks);
+          for (Future<?> f : futures) {
+            f.get();
+          }
+
+        } catch (InterruptedException exn) {
+          System.out.println("Interrupted: " + exn);
+        } catch (ExecutionException e) {
+          throw new RuntimeException(e);
         }
 
-        for (int pi = 0; pi < points.length; pi++) {
-          Point p = points[pi];
-          Cluster best = null;
-          for (Cluster c : clusters)
-            if (best == null || p.sqrDist(c.mean) < p.sqrDist(best.mean))
-              best = c;
-          myCluster[pi] = best;
-        }
+        // System.out.println("End of assignment");
+
       }
+      // UPDATE
       {
         // Update step: recompute mean of each cluster
-        for (Cluster c : clusters)
-          c.resetMean();
-        for (int pi = 0; pi < points.length; pi++)
-          myCluster[pi].addToMean(points[pi]);
-        converged = true;
-        for (Cluster c : clusters)
-          converged &= c.computeNewMean();
+        for (Cluster cluster : clusters) {
+          cluster.resetMean();
+        }
+
+        // Split into 8 tasks
+        final int taskCount = 8;
+        List<Callable<Void>> updateTasks = new ArrayList<>();
+        for (int t = 0; t < taskCount; t++) {
+          final int threadNumber = t;
+          final int pointsPerTask = points.length / taskCount;
+          final int pointsFrom = pointsPerTask * threadNumber;
+          final int pointsTo = (threadNumber + 1 == taskCount) ? points.length : pointsPerTask * (threadNumber + 1);
+
+          updateTasks.add(() -> {
+            // Add to mean
+            for (int j = pointsFrom; j < pointsTo; j++) {
+              myCluster[j].addToMean(points[j]);
+            }
+            return null;
+          });
+        }
+        // Done assigning tasks, try to invoke
+        try {
+          es.invokeAll(updateTasks);
+
+        } catch (InterruptedException exn) {
+          System.out.println("Interrupted: " + exn);
+        }
+
+        // Done running tasks, check converged Status
+
+        converged.set(true);
+        for (Cluster cluster : clusters) {
+          boolean res = cluster.computeNewMean();
+          converged.set(converged.get() && res);
+
+          // This shit doesn't work for some reason...
+          // converged.set(converged.get() && cluster.computeNewMean());
+        }
+
       }
       // System.out.printf("[%d]", iterations); // To diagnose infinite loops
     }
@@ -148,26 +217,26 @@ class KMeans2P implements KMeans {
       this.mean = mean;
     }
 
-    public void addToMean(Point p) {
+    public synchronized void addToMean(Point p) {
       sumx += p.x;
       sumy += p.y;
       count++;
     }
 
     // Recompute mean, return true if it stays almost the same, else false
-    public boolean computeNewMean() {
+    public synchronized boolean computeNewMean() {
       Point oldMean = this.mean;
       this.mean = new Point(sumx / count, sumy / count);
       return oldMean.almostEquals(this.mean);
     }
 
-    public void resetMean() {
+    public synchronized void resetMean() {
       sumx = sumy = 0.0;
       count = 0;
     }
 
     @Override
-    public Point getMean() {
+    public synchronized Point getMean() {
       return mean;
     }
   }

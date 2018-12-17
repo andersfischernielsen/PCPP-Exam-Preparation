@@ -261,3 +261,25 @@ class KMeans1        Real time:     7,744
 #### Question 1.5
 #### Question 1.6
 #### Question 1.7
+
+### Question 2.0
+#### Question 2.1
+```
+# OS:   Mac OS X; 10.14.2; x86_64
+# JVM:  Oracle Corporation; 1.8.0_60
+# CPU:  null; 4 "cores"
+# Date: 2018-12-17T12:54:02+0100
+class KMeans2        Real time:     6,233
+Used 108 iterations
+```
+
+
+#### Question 2.2
+#### Question 2.3
+#### Question 2.4
+#### Question 2.5
+#### Question 2.6
+#### Question 2.7
+#### Question 2.8
+#### Question 2.9
+#### Question 2.10
