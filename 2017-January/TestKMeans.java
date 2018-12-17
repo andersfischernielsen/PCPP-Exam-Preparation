@@ -220,20 +220,14 @@ class KMeans2P implements KMeans {
       }
       {
         final var threads = 8;
-        var futures = new ArrayList<Future<?>>(threads * 3);
+        var futures = new ArrayList<Future<?>>(threads);
         // Update step: recompute mean of each cluster
+        for (var j = 0; j < clusters.length; j++) {
+          clusters[j].resetMean();
+        }
+
         for (var i = 0; i < threads; i++) {
           final var currentThread = i;
-          final var clusterChunk = clusters.length / 8;
-          final var from = clusterChunk * currentThread;
-          final var to = currentThread + 1 == k ? k + 1 : clusterChunk * (currentThread + 1);
-
-          futures.add(executor.submit(() -> {
-            for (var j = from; j < to; j++) {
-              clusters[j].resetMean();
-            }
-          }));
-
           final var pointChunk = points.length / 8;
           final var pointFrom = pointChunk * currentThread;
           final var pointTo = currentThread + 1 == k ? k + 1 : pointChunk * (currentThread + 1);
@@ -242,22 +236,20 @@ class KMeans2P implements KMeans {
               myCluster[j].addToMean(points[j]);
             }
           }));
-
-          converged.set(true);
-          futures.add(executor.submit(() -> {
-            for (var j = from; j < to; j++) {
-              var res = clusters[j].computeNewMean();
-              converged.set(converged.get() && res);
-            }
-          }));
         }
-
         for (var f : futures) {
           try {
             f.get();
           } catch (Exception e) {
           }
         }
+
+        converged.set(true);
+        for (var j = 0; j < clusters.length; j++) {
+          var res = clusters[j].computeNewMean();
+          converged.set(converged.get() && res);
+        }
+
       }
       // System.out.printf("[%d]", iterations); // To diagnose infinite loops
     }
