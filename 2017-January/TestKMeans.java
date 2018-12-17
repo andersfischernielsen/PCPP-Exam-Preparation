@@ -202,13 +202,14 @@ class KMeans2P implements KMeans {
   public void findClusters(int[] initialPoints) {
     final Cluster[] clusters = GenerateData.initialClusters(points, initialPoints, Cluster::new, Cluster[]::new);
     final Cluster[] myCluster = new Cluster[points.length];
-    var converged = new AtomicBoolean(false);
     var executor = Executors.newWorkStealingPool();
+    var converged = false;
 
-    while (!converged.get()) {
+    while (!converged) {
       iterations++;
       {
         // Assignment step: put each point in exactly one cluster
+        // TODO: Parallel.
         for (int pi = 0; pi < points.length; pi++) {
           Point p = points[pi];
           Cluster best = null;
@@ -225,7 +226,7 @@ class KMeans2P implements KMeans {
         }
 
         final var tasks = 8;
-        var callables = new ArrayList<Callable<Void>>(tasks * 2);
+        var callables = new ArrayList<Callable<Void>>();
         for (var i = 0; i < tasks; i++) {
           final var currentThread = i;
           final var chunk = points.length / 8;
@@ -245,12 +246,11 @@ class KMeans2P implements KMeans {
         } catch (Exception e) {
         }
 
-        converged.set(true);
+        converged = true;
         for (var j = 0; j < clusters.length; j++) {
           var res = clusters[j].computeNewMean();
-          converged.set(converged.get() && res);
+          converged = converged && res;
         }
-
       }
       // System.out.printf("[%d]", iterations); // To diagnose infinite loops
     }
