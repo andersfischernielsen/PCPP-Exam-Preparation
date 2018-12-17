@@ -228,11 +228,9 @@ class KMeans2P implements KMeans {
         final var tasks = 8;
         var callables = new ArrayList<Callable<Void>>();
         for (var i = 0; i < tasks; i++) {
-          final var currentThread = i;
           final var chunk = points.length / 8;
-          final var from = chunk * currentThread;
-          final var to = currentThread + 1 == k ? k + 1 : chunk * (currentThread + 1);
-
+          final var from = chunk * i;
+          final var to = i + 1 == k ? k + 1 : chunk * (i + 1);
           callables.add(() -> {
             for (var j = from; j < to; j++) {
               myCluster[j].addToMean(points[j]);
