@@ -221,8 +221,8 @@ class KMeans2P implements KMeans {
       }
       {
         // Update step: recompute mean of each cluster
-        for (var j = 0; j < clusters.length; j++) {
-          clusters[j].resetMean();
+        for (var c : clusters) {
+          c.resetMean();
         }
 
         final var tasks = 8;
@@ -245,15 +245,14 @@ class KMeans2P implements KMeans {
         }
 
         converged = true;
-        for (var j = 0; j < clusters.length; j++) {
-          var res = clusters[j].computeNewMean();
+        for (var c : clusters) {
+          var res = c.computeNewMean();
           converged = converged && res;
         }
       }
       // System.out.printf("[%d]", iterations); // To diagnose infinite loops
     }
     this.clusters = clusters;
-
   }
 
   public void print() {
