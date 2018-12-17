@@ -90,11 +90,11 @@ class KMeans1P implements KMeans {
     };
   }
 
-  private Callable<Cluster> processCluster(Cluster c) {
+  private Callable<Cluster> processCluster(Cluster c, AtomicBoolean converged) {
     return () -> {
       Point mean = c.computeMean();
       if (!c.mean.almostEquals(mean)) {
-        return null;
+        converged.set(true);
       }
       if (mean != null)
         return new Cluster(mean);
@@ -105,11 +105,11 @@ class KMeans1P implements KMeans {
 
   public void findClusters(int[] initialPoints) {
     Cluster[] clusters = GenerateData.initialClusters(points, initialPoints, Cluster::new, Cluster[]::new);
-    boolean converged = false;
+    AtomicBoolean converged = new AtomicBoolean(false);
     var p = 8;
     var executor = Executors.newWorkStealingPool();
 
-    while (!converged) {
+    while (!converged.get()) {
       iterations++;
       // Assignment step: put each point in exactly one cluster
       for (var i = 0; i < p; i++) {
@@ -119,9 +119,10 @@ class KMeans1P implements KMeans {
       }
 
       // Update step: recompute mean of each cluster
+      converged.set(false);
       ArrayList<Callable<Cluster>> futures = new ArrayList<>();
       for (Cluster c : clusters) {
-        futures.add(processCluster(c));
+        futures.add(processCluster(c, converged));
       }
       try {
         var newClusters = executor.invokeAll(futures);
@@ -132,11 +133,9 @@ class KMeans1P implements KMeans {
             return null;
           }
         }).toArray();
-        converged = false;
+        converged.set(false);
       } catch (Exception e) {
       }
-
-      converged = iterations == 108;
     }
     this.clusters = clusters;
   }
@@ -161,17 +160,21 @@ class KMeans1P implements KMeans {
     }
 
     public void add(Point p) {
-      points.add(p);
+      synchronized (points) {
+        points.add(p);
+      }
     }
 
     public Point computeMean() {
-      double sumx = 0.0, sumy = 0.0;
-      for (Point p : points) {
-        sumx += p.x;
-        sumy += p.y;
+      synchronized (points) {
+        double sumx = 0.0, sumy = 0.0;
+        for (Point p : points) {
+          sumx += p.x;
+          sumy += p.y;
+        }
+        int count = points.size();
+        return count == 0 ? null : new Point(sumx / count, sumy / count);
       }
-      int count = points.size();
-      return count == 0 ? null : new Point(sumx / count, sumy / count);
     }
   }
 }
