@@ -32,7 +32,7 @@ public class TestKMeans {
     final Point[] points = GenerateData.randomPoints(n);
     final int[] initialPoints = GenerateData.randomIndexes(n, k);
     for (int i = 0; i < 3; i++) {
-      timeKMeans(new KMeans2P(points, k), initialPoints);
+      timeKMeans(new KMeans3P(points, k), initialPoints);
       // timeKMeans(new KMeans1P(points, k), initialPoints);
       // timeKMeans(new KMeans2(points, k), initialPoints);
       // timeKMeans(new KMeans2P(points, k), initialPoints);
@@ -204,19 +204,32 @@ class KMeans2P implements KMeans {
     final Cluster[] myCluster = new Cluster[points.length];
     var executor = Executors.newWorkStealingPool();
     var converged = false;
+    final var tasks = 4;
 
     while (!converged) {
       iterations++;
       {
         // Assignment step: put each point in exactly one cluster
-        // TODO: Parallel.
-        for (int pi = 0; pi < points.length; pi++) {
-          Point p = points[pi];
-          Cluster best = null;
-          for (Cluster c : clusters)
-            if (best == null || p.sqrDist(c.mean) < p.sqrDist(best.mean))
-              best = c;
-          myCluster[pi] = best;
+        var callables = new ArrayList<Callable<Void>>();
+        for (var i = 0; i < tasks; i++) {
+          final var chunk = points.length / 8;
+          final var from = chunk * i;
+          final var to = i + 1 == k ? k + 1 : chunk * (i + 1);
+          callables.add(() -> {
+            for (var j = from; j < to; j++) {
+              Point p = points[j];
+              Cluster best = null;
+              for (Cluster c : clusters)
+                if (best == null || p.sqrDist(c.mean) < p.sqrDist(best.mean))
+                  best = c;
+              myCluster[j] = best;
+            }
+            return null;
+          });
+          try {
+            executor.invokeAll(callables);
+          } catch (Exception e) {
+          }
         }
       }
       {
@@ -225,7 +238,6 @@ class KMeans2P implements KMeans {
           c.resetMean();
         }
 
-        final var tasks = 8;
         var callables = new ArrayList<Callable<Void>>();
         for (var i = 0; i < tasks; i++) {
           final var chunk = points.length / 8;
@@ -297,7 +309,7 @@ class KMeans2P implements KMeans {
 
 // ----------------------------------------------------------------------
 
-class KMeans3 implements KMeans {
+class KMeans3P implements KMeans {
   // Stream-based version. Representation (A2): Immutable Clusters of
   // immutable Points.
 
@@ -306,7 +318,7 @@ class KMeans3 implements KMeans {
   private Cluster[] clusters;
   private int iterations;
 
-  public KMeans3(Point[] points, int k) {
+  public KMeans3P(Point[] points, int k) {
     this.points = points;
     this.k = k;
   }
