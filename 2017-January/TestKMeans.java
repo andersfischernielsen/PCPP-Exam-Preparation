@@ -32,7 +32,7 @@ public class TestKMeans {
     final Point[] points = GenerateData.randomPoints(n);
     final int[] initialPoints = GenerateData.randomIndexes(n, k);
     for (int i = 0; i < 3; i++) {
-      timeKMeans(new KMeans3(points, k), initialPoints);
+      timeKMeans(new KMeans2P(points, k), initialPoints);
       // timeKMeans(new KMeans1P(points, k), initialPoints);
       // timeKMeans(new KMeans2(points, k), initialPoints);
       // timeKMeans(new KMeans2P(points, k), initialPoints);
@@ -220,6 +220,7 @@ class KMeans2P implements KMeans {
       }
       {
         final var threads = 8;
+        var futures = new ArrayList<Future<?>>(threads * 3);
         // Update step: recompute mean of each cluster
         for (var i = 0; i < threads; i++) {
           final var currentThread = i;
@@ -227,33 +228,40 @@ class KMeans2P implements KMeans {
           final var from = clusterChunk * currentThread;
           final var to = currentThread + 1 == k ? k + 1 : clusterChunk * (currentThread + 1);
 
-          executor.execute(() -> {
+          futures.add(executor.submit(() -> {
             for (var j = from; j < to; j++) {
               clusters[j].resetMean();
             }
-          });
+          }));
 
           final var pointChunk = points.length / 8;
           final var pointFrom = pointChunk * currentThread;
           final var pointTo = currentThread + 1 == k ? k + 1 : pointChunk * (currentThread + 1);
-          executor.execute(() -> {
+          futures.add(executor.submit(() -> {
             for (var j = pointFrom; j < pointTo; j++) {
               myCluster[j].addToMean(points[j]);
             }
-          });
+          }));
 
           converged.set(true);
-          executor.execute(() -> {
+          futures.add(executor.submit(() -> {
             for (var j = from; j < to; j++) {
-              converged.set(converged.get() && clusters[j].computeNewMean());
+              var res = clusters[j].computeNewMean();
+              converged.set(converged.get() && res);
             }
-          });
+          }));
+        }
+
+        for (var f : futures) {
+          try {
+            f.get();
+          } catch (Exception e) {
+          }
         }
       }
       // System.out.printf("[%d]", iterations); // To diagnose infinite loops
     }
     this.clusters = clusters;
-
   }
 
   public void print() {
