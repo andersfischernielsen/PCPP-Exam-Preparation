@@ -219,29 +219,30 @@ class KMeans2P implements KMeans {
         }
       }
       {
-        final var threads = 8;
-        var futures = new ArrayList<Future<?>>(threads);
         // Update step: recompute mean of each cluster
         for (var j = 0; j < clusters.length; j++) {
           clusters[j].resetMean();
         }
 
-        for (var i = 0; i < threads; i++) {
+        final var tasks = 8;
+        var callables = new ArrayList<Callable<Void>>(tasks * 2);
+        for (var i = 0; i < tasks; i++) {
           final var currentThread = i;
-          final var pointChunk = points.length / 8;
-          final var pointFrom = pointChunk * currentThread;
-          final var pointTo = currentThread + 1 == k ? k + 1 : pointChunk * (currentThread + 1);
-          futures.add(executor.submit(() -> {
-            for (var j = pointFrom; j < pointTo; j++) {
+          final var chunk = points.length / 8;
+          final var from = chunk * currentThread;
+          final var to = currentThread + 1 == k ? k + 1 : chunk * (currentThread + 1);
+
+          callables.add(() -> {
+            for (var j = from; j < to; j++) {
               myCluster[j].addToMean(points[j]);
             }
-          }));
+            return null;
+          });
         }
-        for (var f : futures) {
-          try {
-            f.get();
-          } catch (Exception e) {
-          }
+
+        try {
+          executor.invokeAll(callables);
+        } catch (Exception e) {
         }
 
         converged.set(true);
@@ -254,6 +255,7 @@ class KMeans2P implements KMeans {
       // System.out.printf("[%d]", iterations); // To diagnose infinite loops
     }
     this.clusters = clusters;
+
   }
 
   public void print() {
